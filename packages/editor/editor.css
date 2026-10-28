@@ -47,7 +47,9 @@ button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(
 button.quiet { border-color: transparent; color: var(--muted); margin-left: auto; }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; padding-inline: 16px; }
 button.primary:hover:not(:disabled) { background: #0842a0; }
-.group.end { margin-left: auto; }
+.group.end { margin-left: auto; align-items: center; }
+.link { color: var(--accent); padding-inline: 6px; }
+.link[hidden] { display: none; }
 .page-name { color: var(--muted); }
 .save-state { color: var(--muted); font-size: 13px; min-width: 9em; }
 .save-state.error { color: var(--danger); }

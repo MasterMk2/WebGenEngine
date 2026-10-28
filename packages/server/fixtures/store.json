@@ -1,0 +1,88 @@
+{
+  "about": "Scenarios for the page store, run by packages/editor/store.test.mjs (store.mjs) and packages/server/test.php (PageStore.php). The clock starts at 1000 ms and moves only on tick. expect is matched as a subset: listed keys must be equal, arrays must have the listed length.",
+  "scenarios": [
+    {
+      "name": "load creates the draft once and keeps it afterwards",
+      "steps": [
+        { "call": "load", "args": ["A"], "expect": { "draft": { "source": "A", "revision": 0, "savedAt": null }, "published": null, "unpublishedChanges": true } },
+        { "call": "saveDraft", "args": ["B", 0], "expect": { "ok": true, "revision": 1, "savedAt": 1000 } },
+        { "call": "load", "args": ["ignored"], "expect": { "draft": { "source": "B", "revision": 1, "savedAt": 1000 } } }
+      ]
+    },
+    {
+      "name": "saveDraft refuses a stale base revision as a conflict",
+      "steps": [
+        { "call": "load", "args": ["A"] },
+        { "call": "saveDraft", "args": ["B", 0], "expect": { "ok": true, "revision": 1 } },
+        { "call": "saveDraft", "args": ["C", 0], "expect": { "ok": false, "reason": "conflict", "draft": { "source": "B", "revision": 1, "savedAt": 1000 } } },
+        { "call": "saveDraft", "args": ["C", 1], "expect": { "ok": true, "revision": 2 } }
+      ]
+    },
+    {
+      "name": "publish takes only the revision that was seen, and marks it live",
+      "steps": [
+        { "call": "load", "args": ["A"] },
+        { "call": "saveDraft", "args": ["B", 0] },
+        { "call": "publish", "args": [0], "expect": { "ok": false, "reason": "stale" } },
+        { "call": "publish", "args": [1], "expect": { "ok": true, "version": { "id": 2, "kind": "publish", "revision": 1 }, "published": { "id": 2 }, "unpublishedChanges": false } },
+        { "call": "getVersion", "args": [2], "expect": "B" },
+        { "call": "saveDraft", "args": ["C", 1], "expect": { "ok": true, "unpublishedChanges": true, "published": { "id": 2 } } }
+      ]
+    },
+    {
+      "name": "undoPublish goes back to the page that was live before, or to none",
+      "steps": [
+        { "call": "load", "args": ["A"] },
+        { "call": "publish", "args": [0], "expect": { "version": { "id": 1 } } },
+        { "call": "saveDraft", "args": ["B", 0] },
+        { "call": "publish", "args": [1], "expect": { "version": { "id": 3 } } },
+        { "call": "undoPublish", "args": [3], "expect": { "ok": true, "published": { "id": 1 }, "unpublishedChanges": true } },
+        { "call": "undoPublish", "args": [3], "expect": { "ok": false, "reason": "not-live" } },
+        { "call": "undoPublish", "args": [1], "expect": { "ok": true, "published": null } }
+      ]
+    },
+    {
+      "name": "autosaves keep a version at most every checkpoint interval",
+      "options": { "checkpointEvery": 600000 },
+      "steps": [
+        { "call": "load", "args": ["A"] },
+        { "call": "saveDraft", "args": ["B", 0] },
+        { "tick": 60000 },
+        { "call": "saveDraft", "args": ["C", 1] },
+        { "tick": 60000 },
+        { "call": "saveDraft", "args": ["D", 2] },
+        { "tick": 660000 },
+        { "call": "saveDraft", "args": ["E", 3] },
+        { "call": "listVersions", "args": [], "expect": [{ "kind": "auto", "revision": 4, "at": 781000, "live": false }, { "kind": "auto", "revision": 1, "at": 1000 }] },
+        { "call": "getVersion", "args": [2], "expect": "E" }
+      ]
+    },
+    {
+      "name": "only the newest autosave versions are kept; publishes stay",
+      "options": { "checkpointEvery": 0, "keepAuto": 2 },
+      "steps": [
+        { "call": "load", "args": ["A"] },
+        { "call": "publish", "args": [0] },
+        { "call": "saveDraft", "args": ["B", 0] },
+        { "tick": 1 },
+        { "call": "saveDraft", "args": ["C", 1] },
+        { "tick": 1 },
+        { "call": "saveDraft", "args": ["D", 2] },
+        { "tick": 1 },
+        { "call": "saveDraft", "args": ["E", 3] },
+        { "call": "listVersions", "args": [], "expect": [{ "id": 5, "kind": "auto" }, { "id": 4, "kind": "auto" }, { "id": 1, "kind": "publish", "live": true }] }
+      ]
+    },
+    {
+      "name": "an unchanged autosave keeps no extra version",
+      "options": { "checkpointEvery": 0 },
+      "steps": [
+        { "call": "load", "args": ["A"] },
+        { "call": "saveDraft", "args": ["B", 0] },
+        { "call": "saveDraft", "args": ["B", 1], "expect": { "ok": true, "revision": 2 } },
+        { "call": "listVersions", "args": [], "expect": [{ "id": 1 }] },
+        { "call": "getVersion", "args": [99], "expect": null }
+      ]
+    }
+  ]
+}

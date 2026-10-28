@@ -1,0 +1,104 @@
+# 保存 API（サーバー側）v0
+
+- 状態: 試作。2026-10-29
+- 実装: `packages/server/`（PHP）と、エディタ側の `packages/editor/http-store.mjs`
+- 元にした決定: editor-ux.md §3.3（自動保存・下書き・公開・版）、D13（SQLite が既定）、R6（公開側で PHP を動かさない）、要件 §3.3（WAF の誤検知）
+
+## 1. 何をするか
+
+エディタの保存先を、ブラウザの localStorage からサーバーに移す。エディタから見た形は `store.mjs` と同じで、エディタは起動時にどちらを使うかを決める。
+
+- `/api/ping` が API の答え（後述の `wge` の印）を返せばサーバー
+- 返さなければ、今までどおりブラウザの中（Node の `serve.mjs` で開いたとき）
+
+公開すると、公開用の HTML と CSS をファイルに書き出す。公開されたページの表示に PHP は関わらない（R6）。
+
+## 2. 作り
+
+| ファイル | 役目 |
+|---|---|
+| `PageStore.php` | ページごとの下書き 1 つ、公開中の版、版の一覧を SQLite に持つ。規則は `store.mjs` と同じ |
+| `Api.php` | HTTP の要求を受けて PageStore を呼び、公開時に HTML を書き出す。`handle()` は要求を値で受けて `[状態コード, 本文]` を返すので、テストは Web サーバーなしで呼べる |
+| `router.php` | PHP 組み込みサーバー用の振り分け。開発専用 |
+| `run-dev.sh` | Docker で開発用サーバーを起動する。127.0.0.1:8766 だけに出す |
+| `test.php`、`test-docker.sh` | テスト。PHP 8.3 と 8.5 で回す |
+| `fixtures/store.json` | 保存の規則の筋書き。JS（`store.test.mjs`）と PHP（`test.php`）の両方で回し、2 つの実装の食い違いを防ぐ |
+
+### 2.1 API
+
+すべて JSON。応答には必ず `"wge": 1` を付ける。
+
+| 要求 | 本文 | 成功 | 失敗 |
+|---|---|---|---|
+| `GET /api/ping` | — | 200 | — |
+| `POST /api/pages/{id}/load` | `initialSource` | 200。なければ作る | 422（読めないソース） |
+| `POST /api/pages/{id}/draft` | `source`、`baseRevision` | 200 | 409 `conflict`（相手の下書きを返す）、422 `invalid`（行と列を返す）、404 `not-loaded` |
+| `POST /api/pages/{id}/publish` | `revision` | 200。公開用の HTML を書く | 409 `stale` |
+| `POST /api/pages/{id}/undo-publish` | `versionId` | 200。前の版の HTML に書き戻す。前がなければ消す | 409 `not-live` |
+| `GET /api/pages/{id}/versions` | — | 200。新しい順。ソースは含めない | — |
+| `GET /api/pages/{id}/versions/{n}` | — | 200。その版のソース | 404 |
+
+- ページの id は英小文字・数字・ハイフンで 64 文字まで。`top` は `site/index.html`、それ以外は `site/{id}/index.html` に書く
+- 下書きは、保存のたびにソースとして読めるかを確かめる。読めない下書きは保存しないので、公開する版はいつも HTML に書き出せる
+- 書き出しは一時ファイルに書いてから名前を変える。公開中のページを読んでいる人に、書きかけのファイルが見えない
+- 保存の衝突の判定は、SQLite の `BEGIN IMMEDIATE` で書き込みの錠を先に取ってから行う。2 つの保存が同時に判定を通ることはない
+
+### 2.2 よその画面からの書き込みを防ぐ（CSRF）
+
+POST は、`X-WGE-Request: 1` の見出しと `application/json` の型がないと断る（403）。よそのサイトのページからこの 2 つを付けて送るには、ブラウザの事前確認（CORS のプリフライト）が要る。この API は事前確認に答えないので、よそのページからは送れない。
+
+ログインがまだないので、これは仮の守り。ログインを作るときに見直す。
+
+### 2.3 WAF に止められたことの見分け
+
+レンタルサーバーの WAF は、HTML やスクリプトを含む保存を誤って止めうる（要件 §3.3）。止めたときの応答は WAF やサーバーのページで、この API の JSON ではない。
+
+- `http-store.mjs` は、`wge` の印のない応答を `blocked` として扱う
+- 応答がまったくないときは `network` として扱う
+- エディタは `blocked` のとき、自動の再試行をせずに「サーバーの防御機能（WAF）が保存を止めた可能性があります」と対処を出す。同じ内容は何度送っても止められるため。次に書き換えたときに、もう一度送る
+- `network` のときは、5 秒ごとに再試行する
+
+## 3. 動かし方
+
+```
+wsl -d Ubuntu -- sh packages/server/run-dev.sh
+```
+
+`http://127.0.0.1:8766/editor/` を開く。アプリ内のブラウザでは `.claude/launch.json` の `editor-php`。
+
+- 保存したものは `packages/server/data/`（Git の対象外）に置く。中身は `wge.sqlite` と、公開用の `site/`
+- 公開したページは `http://127.0.0.1:8766/site/`
+- 止めても残ったときは `wsl -d Ubuntu -- docker rm -f wge-dev`
+- 既定のイメージは `php:8.3-apache`（中の CLI の組み込みサーバーを使う）。`--pull never` を付けているので、手元にないイメージを勝手に取りに行かない
+
+テスト:
+
+```
+wsl -d Ubuntu -- sh packages/server/test-docker.sh
+node --test packages/editor/store.test.mjs packages/editor/http-store.test.mjs
+```
+
+## 4. 確かめたこと（2026-10-29）
+
+- `test.php`: PHP 8.3.36 と 8.5.12 で 42 件が通過。内訳は、共通の筋書き 7 つの中の検査 21 件と、API の検査 21 件
+- JS: `store.test.mjs` 9 件（共通の筋書き 7 つを含む）、`http-store.test.mjs` 6 件が通過
+- アプリ内のブラウザ（Chromium）で `editor-php` を開いて操作した
+  - 起動時にサーバーの下書きを読み込む。このとき、ブラウザの localStorage には何も書かない
+  - 見出しに書き足すと、約 2 秒後にサーバーに保存され、版の一覧に自動保存の版が 1 つ増える
+  - 書いている途中に「公開」を押すと、`site/index.html` と `style.css` が書き出される。書き出した HTML にはエディタ用の属性（`data-wge-path`）がない。公開したページを開くと、書き足した見出しと 3 枚の画像が出る
+  - 公開の直後の知らせに「公開を取り消す」と「サイトを見る」が出る。取り消すと `site/index.html` が消え、`/site/` は 404 になる
+  - 見出しのない POST と、フォーム形式の POST は 403
+  - `..` を含む道や `.php` のファイルは 404。SQLite のファイルは URL から読めない
+  - ポートは `127.0.0.1:8766` だけに出ている（`docker port`）
+  - Node の `serve.mjs` で開くと、今までどおりブラウザの中に保存する
+
+## 5. まだのこと
+
+- **ログインと役割。** いまは開いた人が誰でも保存・公開できる。127.0.0.1 から出してはいけない
+- **Html の箱の無害化。** 中身はそのまま公開ページに出る（rendering.md §7）。ログインと一緒に入れる
+- レンタルサーバーでの置き方（Apache の下で `Api.php` を呼ぶ入口、データの置き場所を公開ディレクトリの外にすること、書き出し先の権限）。いまの `router.php` は開発用で、本番には使わない
+- 実際の WAF での確認（mixhost など。アカウントが要る）
+- ページの題名。ソース形式に題名がまだないので、`top` は「トップページ」、ほかは id を題名にしている
+- 画像の置き場所。公開ページの `sample/` の画像は、開発用サーバーがエディタのサンプルから返しているだけ
+- 予約投稿と cron（要件 §3.3）
+- 版の一覧の長さの上限（自動保存の版は 30 件まで。公開の版は消さない）

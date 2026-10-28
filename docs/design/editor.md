@@ -86,5 +86,5 @@ node --test packages/editor/slots.test.mjs packages/editor/inline-dom.test.mjs
 - タッチ操作での確認。Pointer Events で書いているが、スマートフォンの実機では試していない。プレビューの上ではタッチによるスクロールもできない
 - キーボードだけでのドラッグの代わり（選んだ部品のツールバーの ↑↓ と Alt+↑↓ はあるが、別の箱へ移す操作がない）
 - キーボードだけで文字を直すこと。右の欄の文字の入力欄をやめたので、プレビューの部品をキーボードで選べるようになるまで（editor-ux.md §4.3）、ソースで直すしかない
-- 保存先のサーバー。下書き・公開・版の扱いは `store.mjs` に作ったが（editor-ux.md §3.8）、中身はブラウザの localStorage で、サーバーには送らない
+- 保存先のサーバーは、開発用として作った（server.md）。ログインがないので 127.0.0.1 の外には出せない。Node の `serve.mjs` で開いたときは、今までどおりブラウザの localStorage に保存する
 - Html の中身を書けるのを管理者だけにする仕組み（rendering.md §7）

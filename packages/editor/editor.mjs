@@ -7,6 +7,7 @@ import { createRenderer } from '../source/js/render.mjs';
 import { slotIndex, slotGuide, nearEdge, moveArgs } from './slots.mjs';
 import { inlineFromDom } from './inline-dom.mjs';
 import { createPageStore } from './store.mjs';
+import { createHttpStore } from './http-store.mjs';
 
 const fetchText = (p) => fetch(p).then((r) => {
   if (!r.ok) throw new Error(`${p}: ${r.status}`);
@@ -1101,13 +1102,16 @@ function webStorage() {
 }
 
 const storage = webStorage();
-const store = createPageStore(storage, 'top');
+// Replaced at start-up by the server's store when the editor is served with the PHP API
+// (packages/server/router.php); otherwise the page stays in this browser.
+let store = createPageStore(storage, 'top');
+let serverMode = false;
 const saving = {
   revision: 0, // draft revision the editor's source is based on
   savedSource: null,
   savedAt: null,
   publishedSource: null,
-  failed: false,
+  failed: null, // why the last save failed: 'blocked' (a WAF, most likely), 'network', ...
   conflict: null, // the other tab's draft, until the user chooses
   timer: null,
   chain: Promise.resolve(),
@@ -1123,10 +1127,12 @@ function showSaveState(kind) {
     saving: '保存中…',
     saved: saving.savedAt ? `保存しました ${clock.format(saving.savedAt)}` : '',
     failed: '保存できませんでした。再試行しています',
+    blocked: 'サーバーが保存を受け付けませんでした',
     conflict: '別の画面で保存された変更があります',
   }[kind];
   el.textContent = text;
-  el.className = `save-state ${kind === 'failed' || kind === 'conflict' ? 'error' : ''}`;
+  el.className = `save-state ${kind === 'failed' || kind === 'blocked' || kind === 'conflict' ? 'error' : ''}`;
+  $('view-site').hidden = !serverMode || saving.publishedSource === null;
   // Text being written counts as a change, so "公開" can be pressed without leaving it first;
   // the press saves the text and then publishes it.
   const live = state.source === saving.publishedSource && !state.editing?.dirty;
@@ -1139,7 +1145,7 @@ function showSaveState(kind) {
 // The save state when nothing is running: what the header shows after a no-op.
 function restingSaveState() {
   if (saving.conflict) return 'conflict';
-  if (saving.failed) return 'failed';
+  if (saving.failed) return saving.failed === 'blocked' ? 'blocked' : 'failed';
   return state.source !== saving.savedSource || state.editing?.dirty ? 'pending' : 'saved';
 }
 
@@ -1174,19 +1180,27 @@ async function saveDraft() {
   showSaveState('saving');
   const res = await store.saveDraft(source, saving.revision);
   if (res.ok) {
-    Object.assign(saving, { revision: res.revision, savedSource: source, savedAt: res.savedAt, failed: false });
+    Object.assign(saving, { revision: res.revision, savedSource: source, savedAt: res.savedAt, failed: null });
     showSaveState(restingSaveState());
     renderHistory();
   } else if (res.reason === 'conflict') {
     saving.conflict = res.draft;
     showConflict();
+  } else if (res.reason === 'blocked') {
+    // The same text would be refused again, so there is no retry; the next change tries again.
+    saving.failed = 'blocked';
+    showSaveState('blocked');
+    status(WAF_HELP, 'error');
   } else {
-    saving.failed = true;
+    saving.failed = res.reason ?? 'unknown';
     showSaveState('failed');
     clearTimeout(saving.timer);
     saving.timer = setTimeout(saveNow, 5000);
   }
 }
+
+// Shown when an answer did not come from the API (requirements §3.3: a WAF on rental servers).
+const WAF_HELP = 'サーバーの防御機能（WAF）が保存を止めた可能性があります。サーバーの管理画面で、この管理画面の場所を WAF の対象から外してください。書いた内容はこの画面に残っています。';
 
 function showConflict() {
   showSaveState('conflict');
@@ -1235,13 +1249,17 @@ async function publish() {
   const source = state.source;
   const res = await store.publish(saving.revision);
   if (!res.ok) {
-    status('公開できませんでした。もう一度押してください', 'error');
+    if (res.reason === 'blocked') status(WAF_HELP, 'error');
+    else if (res.reason === 'network') status('サーバーにつながらないため、公開できませんでした。つながってからもう一度押してください', 'error');
+    else status('公開できませんでした。もう一度押してください', 'error');
     return;
   }
   saving.publishedSource = source;
   showSaveState(restingSaveState());
   renderHistory();
-  status(`公開しました（${clock.format(res.version.at)}）`, 'ok', { label: '公開を取り消す', run: () => undoPublish(res.version.id) });
+  const actions = [{ label: '公開を取り消す', run: () => undoPublish(res.version.id) }];
+  if (serverMode) actions.push({ label: 'サイトを見る', run: () => window.open(SITE_URL, '_blank', 'noopener') });
+  status(`公開しました（${clock.format(res.version.at)}）`, 'ok', actions);
 }
 
 async function undoPublish(versionId) {
@@ -1402,9 +1420,26 @@ const readable = (source) => {
   }
 };
 
-// The first time, the page starts from what the earlier prototype kept, else the sample.
-const legacy = storage.getItem(LEGACY_KEY);
-const page = await store.load(legacy !== null && readable(legacy) ? legacy : sample);
+// Served with the PHP API, the page lives on the server; the first open there starts from
+// the sample. Otherwise it lives in this browser, starting from what the earlier prototype
+// kept, else the sample.
+const SITE_URL = '../site/';
+const ping = await fetch('../api/ping', { cache: 'no-store' }).then((r) => r.json()).catch(() => null);
+let page;
+if (ping?.wge === 1) {
+  try {
+    const remote = createHttpStore('../api', 'top');
+    page = await remote.load(sample);
+    store = remote;
+    serverMode = true;
+  } catch (e) {
+    status(`サーバーの保存先を開けなかったため、このブラウザの中に保存します（${e.reason ?? e.message}）`, 'error');
+  }
+}
+if (!page) {
+  const legacy = storage.getItem(LEGACY_KEY);
+  page = await store.load(legacy !== null && readable(legacy) ? legacy : sample);
+}
 Object.assign(saving, { revision: page.draft.revision, savedAt: page.draft.savedAt });
 saving.publishedSource = page.published ? await store.getVersion(page.published.id) : null;
 if (readable(page.draft.source)) {

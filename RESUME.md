@@ -125,15 +125,27 @@ WordPress の上位互換となる CMS「WebGenEngine」を作る。要件をほ
   - アプリ内のブラウザで数えた手数: 文の差し替え 1＋入力、見出しを足す 2＋入力、公開 1、公開の取り消し 1、前の版に戻す 2。ソースの差分は 1 操作につき 1〜5 行
   - テスト: エディタ 19 件（slots 8、inline-dom 4、store 7）、共通テストデータは JS で 121 件が通過。PHP は変更していない
   - 確かめていないこと: タッチ操作（挿入点はホバーがないので出ない）、スマートフォン幅の画面構成（§3.7）、Chromium 以外のブラウザ
-- ローカルの main は origin/main より 5 コミット先にある（直接編集の 1 件と、ツールバー・保存・文書・その手直しの 4 件）。GitHub には push していない。push には承認が要る
+- 保存 API のサーバー側を開発用として作った（2026-10-29。docs/design/server.md）
+  - `packages/server/`: PageStore.php（SQLite）、Api.php、開発用の router.php と run-dev.sh。エディタ側は `packages/editor/http-store.mjs`
+  - エディタは起動時に `/api/ping` を見て、API があればサーバーに、なければ今までどおりブラウザの中に保存する
+  - 公開すると `packages/server/data/site/` に静的な HTML と CSS を書き出す（R6）。取り消すと前の版に書き戻すか、消す
+  - WAF に止められた応答（API の印 `wge` のない応答）を見分けて、対処を出す
+  - 保存の規則の筋書き `packages/server/fixtures/store.json` を、JS と PHP の両方で回す
+  - 動かし方: `wsl -d Ubuntu -- sh packages/server/run-dev.sh` で `http://127.0.0.1:8766/editor/`。アプリ内のブラウザでは launch.json の `editor-php`
+  - テスト: PHP 8.3.36 と 8.5.12 で 42 件（`sh packages/server/test-docker.sh`）、エディタの JS 27 件、共通テストデータ 121 件が通過
+  - アプリ内のブラウザで、保存・公開・公開ページの表示・取り消し・CSRF の拒否・127.0.0.1 だけへの公開を確かめた（server.md §4）
+  - **このサーバーにはログインがない。127.0.0.1 の外に出してはいけない。** レンタルサーバーに置く前に、ログインと役割、Html の無害化を入れる
+- 2026-10-29 に、確認のコマンドの書き間違いで `php:latest`（PHP 8.5.12）の Docker イメージを許可なく取得した。消すかどうかは利用者の判断待ち（`wsl -d Ubuntu -- docker rmi php:latest`）。以後の Docker のスクリプトには `--pull never` を付けた
+- ローカルの main は origin/main より先にある。GitHub には push していない。push には承認が要る
 
 ## 次の一手
 
 日本語入力のある環境で、プレビューの上で書く操作を人が試す（IME の変換中の Enter と Esc）。
 
-次の候補は 2 つ。
+次の候補:
 
-- 保存 API のサーバー側（PHP）。`store.mjs` のメソッドをそのまま HTTP にする。公開すると公開用の HTML を書き出す
+- ログインと役割、Html の無害化（サーバーを 127.0.0.1 の外に出す前に必須）
+- レンタルサーバーでの置き方（Apache の下の入口、データを公開ディレクトリの外に置く）
 - ソース形式の参照（`<Part>`。U4）と、組み込みのパターン（T4 の「まとまりを足す」）
 
 エディタの試作を利用者に触ってもらい、操作感の意見をもらう。そのうえで、次のどれかに進む。

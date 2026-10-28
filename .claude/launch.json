@@ -6,6 +6,12 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["packages/editor/serve.mjs", "8765"],
       "port": 8765
+    },
+    {
+      "name": "editor-php",
+      "runtimeExecutable": "wsl",
+      "runtimeArgs": ["-d", "Ubuntu", "--", "sh", "packages/server/run-dev.sh"],
+      "port": 8766
     }
   ]
 }

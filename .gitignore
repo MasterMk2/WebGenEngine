@@ -17,6 +17,9 @@ dist/
 *.local.json
 .claude/settings.local.json
 
+# Pages saved through the local development server (packages/server/run-dev.sh)
+packages/server/data/
+
 # Results of tools/diagnose.php run on real servers (may contain account paths)
 diagnose-result*.json
 *.log
