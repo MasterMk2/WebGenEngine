@@ -71,6 +71,7 @@ button.danger { color: var(--danger); }
 .preview-frame.stale iframe { opacity: 0.5; }
 .overlay { position: absolute; inset: 0; overflow: hidden; touch-action: none; cursor: default; }
 .overlay.dragging { cursor: grabbing; }
+.overlay.editing { pointer-events: none; }
 .box { position: absolute; pointer-events: none; border-radius: 2px; }
 .box.hover { outline: 1px dashed var(--accent); }
 .box.selected { outline: 2px solid var(--accent); }

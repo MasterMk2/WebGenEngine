@@ -5,6 +5,7 @@
 import { createSourceFormat, SourceError, EditError } from '../source/js/source-format.mjs';
 import { createRenderer } from '../source/js/render.mjs';
 import { slotIndex, slotGuide, nearEdge, moveArgs } from './slots.mjs';
+import { inlineFromDom } from './inline-dom.mjs';
 
 const fetchText = (p) => fetch(p).then((r) => {
   if (!r.ok) throw new Error(`${p}: ${r.status}`);
@@ -45,6 +46,9 @@ const PREVIEW_CSS = `
 [data-wge-path] { cursor: grab; }
 .wge-edit-raw { padding: 12px; border: 1px dashed currentColor; font: 12px ui-monospace, monospace; opacity: 0.7; }
 .wge-section:empty, .wge-stack:empty, .wge-grid:empty { min-height: 48px; outline: 1px dashed #9aa3ad; outline-offset: -4px; }
+.wge-heading, .wge-text, .wge-button { cursor: text; }
+[contenteditable] { outline: none; cursor: text; }
+.wge-text:empty, .wge-heading:empty { min-height: 1.5em; }
 `;
 
 const $ = (id) => document.getElementById(id);
@@ -60,6 +64,7 @@ const state = {
   sourceError: null,
   selected: null,
   hover: null,
+  editing: null, // { path, el } while a block is edited in place in the preview
   undo: [],
   redo: [],
 };
@@ -205,6 +210,9 @@ function redo() {
 let previewScroll = 0;
 
 function render() {
+  // Rendering replaces the preview document; anything still being typed there is gone.
+  state.editing = null;
+  overlay.classList.remove('editing');
   frameWrap.classList.toggle('stale', Boolean(state.sourceError));
   previewScroll = frame.contentWindow?.scrollY ?? previewScroll;
   frame.srcdoc = [
@@ -220,9 +228,16 @@ function render() {
   $('redo').disabled = state.redo.length === 0;
 }
 
+// Runs once after the next preview load, to continue an action on the new document.
+let afterLoad = null;
+
 frame.addEventListener('load', () => {
   frame.contentWindow.scrollTo(0, previewScroll);
+  watchPreview(previewDoc());
   drawOverlay();
+  const next = afterLoad;
+  afterLoad = null;
+  next?.();
 });
 
 const previewDoc = () => frame.contentDocument;
@@ -273,7 +288,8 @@ function drawOverlay(drag = null) {
     if (el) {
       const r = el.getBoundingClientRect();
       addBox('selected', r);
-      addLabel(r, NAMES[nodeAt(state.doc, state.selected).type]);
+      const name = NAMES[nodeAt(state.doc, state.selected).type];
+      addLabel(r, state.editing ? `${name}（書いています。Esc で終わる）` : name);
     }
   }
 }
@@ -351,10 +367,7 @@ overlay.addEventListener('pointerup', (e) => {
   pointer = null;
   overlay.classList.remove('dragging');
   if (!p.dragging) {
-    state.selected = p.path && p.path.length > 0 ? p.path : null;
-    renderProps();
-    renderBackdrop(true);
-    drawOverlay();
+    select(p.path, p.start);
     return;
   }
   const args = p.target ? moveArgs(p.drag, p.target.parent, p.target.index) : { error: 'ここには置けません' };
@@ -381,6 +394,219 @@ overlay.addEventListener('wheel', (e) => {
   frame.contentWindow.scrollBy(e.deltaX, e.deltaY);
   drawOverlay();
 }, { passive: false });
+
+// ------------------------------------------------- editing text in place
+// A click on a heading, text or button selects it and puts the caret where it was
+// clicked (docs/design/editor-ux.md §3.1). The element becomes contenteditable inside
+// the preview; the overlay steps aside so the pointer can select text. Typing stays in
+// the preview DOM until editing ends (Esc, Enter, a click elsewhere); then the DOM is
+// read back with inlineFromDom and written as one setInline edit, one undo step.
+
+// Selects a block; a text block also starts editing at `point` (preview coordinates).
+function select(path, point = null) {
+  state.selected = path && path.length > 0 ? path : null;
+  renderProps();
+  renderBackdrop(true);
+  drawOverlay();
+  const node = state.selected && nodeAt(state.doc, state.selected);
+  if (node && kindOf(node) === 'text') startEditing(state.selected, point);
+}
+
+function caretRange(d, { x, y }) {
+  if (d.caretPositionFromPoint) {
+    const pos = d.caretPositionFromPoint(x, y);
+    if (!pos) return null;
+    const range = d.createRange();
+    range.setStart(pos.offsetNode, pos.offset);
+    return range;
+  }
+  return d.caretRangeFromPoint?.(x, y) ?? null;
+}
+
+// `point` places the caret where the pointer was; without it the caret goes to the end,
+// or to the start when `atStart` (the second half of a paragraph split by Enter).
+function startEditing(path, point, { atStart = false } = {}) {
+  const el = elementFor(path);
+  if (!el || state.sourceError) return;
+  state.editing = { path, el, composing: false };
+  el.contentEditable = 'true';
+  overlay.classList.add('editing');
+  el.focus({ preventScroll: true });
+  const d = previewDoc();
+  const sel = d.getSelection();
+  const range = point && caretRange(d, point);
+  if (range && el.contains(range.startContainer)) {
+    sel.removeAllRanges();
+    sel.addRange(range);
+  } else {
+    sel.selectAllChildren(el);
+    if (atStart) sel.collapseToStart();
+    else sel.collapseToEnd();
+  }
+  drawOverlay();
+}
+
+function stopEditing() {
+  const ed = state.editing;
+  state.editing = null;
+  overlay.classList.remove('editing');
+  ed.el.removeAttribute('contenteditable');
+  return ed;
+}
+
+// Ends editing and saves what was typed. Returns 'same', 'changed' or 'removed';
+// on 'changed' and 'removed' the preview is rendered again.
+function finishEditing() {
+  if (!state.editing) return 'same';
+  const ed = stopEditing();
+  const node = nodeAt(state.doc, ed.path);
+  const list = inlineFromDom(ed.el);
+  if (node.type === 'Text' && list.length === 0) {
+    apply((doc) => sf.edit.remove(doc, ed.path), null);
+    return 'removed';
+  }
+  // Compare after the source format's own normalization, so that only real changes
+  // rewrite the line (an untouched block keeps its hand-written form).
+  try {
+    const probe = sf.parse(state.source);
+    sf.edit.setInline(probe, ed.path, list);
+    if (JSON.stringify(sf.toJSON(nodeAt(probe, ed.path))) === JSON.stringify(sf.toJSON(node))) {
+      drawOverlay();
+      return 'same';
+    }
+  } catch (e) {
+    status(describeError(e), 'error');
+    render();
+    return 'changed';
+  }
+  if (!apply((doc) => sf.edit.setInline(doc, ed.path, list), ed.path)) render();
+  return 'changed';
+}
+
+// Wraps the selected text in <strong>/<em>, or unwraps it when it is already inside one.
+// The browser's own bold command is not used: it writes <b> or <span style> by its own rules.
+function toggleWrap(tag) {
+  const d = previewDoc();
+  const sel = d.getSelection();
+  if (!sel.rangeCount) return;
+  const range = sel.getRangeAt(0);
+  const el = state.editing.el;
+  let wrapper = range.commonAncestorContainer;
+  if (wrapper.nodeType === 3) wrapper = wrapper.parentNode;
+  wrapper = wrapper.closest(tag);
+  if (wrapper && el.contains(wrapper) && wrapper !== el) {
+    wrapper.replaceWith(...wrapper.childNodes);
+    return;
+  }
+  if (range.collapsed) return;
+  const w = d.createElement(tag);
+  w.append(range.extractContents());
+  range.insertNode(w);
+  sel.selectAllChildren(w);
+}
+
+// Enter in a paragraph splits it at the caret, as in a document (editor-ux.md §4.2):
+// the text after the caret moves into a new paragraph, written as one edit.
+function splitParagraph() {
+  const d = previewDoc();
+  const { el } = state.editing;
+  const sel = d.getSelection();
+  if (!sel.rangeCount) return;
+  const range = sel.getRangeAt(0);
+  range.deleteContents();
+  const tail = d.createRange();
+  tail.setStart(range.endContainer, range.endOffset);
+  tail.setEnd(el, el.childNodes.length);
+  const holder = d.createElement('p');
+  holder.append(tail.extractContents());
+  const after = inlineFromDom(holder);
+  const before = inlineFromDom(el);
+  if (before.length === 0 && after.length === 0) {
+    finishEditing(); // Enter on an empty paragraph just leaves it (and removes it)
+    return;
+  }
+  const { path } = stopEditing();
+  const parent = path.slice(0, -1);
+  const next = [...parent, path.at(-1) + 1];
+  // The new paragraph keeps the size and alignment of the one it was split from.
+  const props = { ...nodeAt(state.doc, path).props };
+  const ok = apply((doc) => {
+    sf.edit.setInline(doc, path, before);
+    sf.edit.insert(doc, parent, next.at(-1), { type: 'Text', props, children: after });
+  }, next);
+  if (ok) afterLoad = () => startEditing(next, null, { atStart: true });
+  else render();
+}
+
+function onEditKey(e) {
+  const ed = state.editing;
+  // Focus stays in the preview after editing ends; its keys are the editor's shortcuts then.
+  if (!ed) {
+    onKey(e);
+    return;
+  }
+  // While the IME is composing, Enter and Esc belong to the IME (R2).
+  if (e.isComposing || ed.composing || e.keyCode === 229) return;
+  const mod = e.ctrlKey || e.metaKey;
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    finishEditing();
+    frame.blur();
+    window.focus();
+  } else if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    if (nodeAt(state.doc, ed.path).type === 'Text') splitParagraph();
+    else finishEditing();
+  } else if (mod && (e.key.toLowerCase() === 'z' || e.key.toLowerCase() === 'y')) {
+    // The browser's own undo does not know about toggleWrap's changes, so Ctrl+Z and
+    // Ctrl+Y end editing and use the editor's history: one editing session is one step.
+    e.preventDefault();
+    finishEditing();
+    if (e.key.toLowerCase() === 'y' || e.shiftKey) redo();
+    else undo();
+  } else if (mod && (e.key.toLowerCase() === 'b' || e.key.toLowerCase() === 'i')) {
+    e.preventDefault();
+    toggleWrap(e.key.toLowerCase() === 'b' ? 'strong' : 'em');
+  }
+}
+
+function watchPreview(d) {
+  d.addEventListener('keydown', onEditKey);
+  d.addEventListener('compositionstart', () => { if (state.editing) state.editing.composing = true; });
+  d.addEventListener('compositionend', () => { if (state.editing) state.editing.composing = false; });
+  d.addEventListener('beforeinput', (e) => {
+    // Formatting, paragraphs and undo are handled above. Dragging text would delete it
+    // here and drop foreign markup there, so drags inside the preview are refused.
+    if (/^format|^history|^insertParagraph$|^insertFromDrop$|^deleteByDrag$/.test(e.inputType)) e.preventDefault();
+  });
+  d.addEventListener('paste', (e) => {
+    if (!state.editing) return;
+    e.preventDefault();
+    const text = e.clipboardData.getData('text/plain').replace(/\r?\n/g, ' ');
+    d.execCommand('insertText', false, text);
+  });
+  // The overlay lets the pointer through only while editing, so this sees clicks then.
+  d.addEventListener('pointerdown', (e) => {
+    const ed = state.editing;
+    if (!ed || ed.el.contains(e.target)) return;
+    e.preventDefault();
+    const hit = e.target.closest?.('[data-wge-path]');
+    const path = hit ? parsePath(hit.dataset.wgePath) : null;
+    const point = { x: e.clientX, y: e.clientY };
+    const result = finishEditing();
+    if (result === 'same') select(path, point);
+    else if (result === 'changed') afterLoad = () => select(path, point);
+    else afterLoad = () => select(null);
+  }, true);
+  d.defaultView.addEventListener('scroll', () => drawOverlay());
+}
+
+// Clicks on the editor's own controls end editing first, so they act on saved text.
+document.addEventListener('pointerdown', (e) => {
+  if (state.editing && e.target !== overlay) finishEditing();
+}, true);
+// Typing not yet saved would be lost on reload or close.
+window.addEventListener('pagehide', () => finishEditing());
 
 // ---------------------------------------------------------- property panel
 
@@ -441,15 +667,22 @@ function moveBy(delta) {
   apply((doc) => sf.edit.move(doc, path, parent, j), [...parent, j]);
 }
 
+let propsKey = null;
+
 function renderProps() {
   const panel = $('props');
-  panel.replaceChildren();
   const path = state.selected;
   const node = path && nodeAt(state.doc, path);
+  // Ending an edit re-renders on pointerdown, before the click that ended it lands.
+  // Rebuilding an unchanged panel would remove the control under that click.
+  const key = JSON.stringify([path, node?.type, node?.props]);
+  if (key === propsKey) return;
+  propsKey = key;
+  panel.replaceChildren();
   if (!node) {
     const p = document.createElement('p');
     p.className = 'empty';
-    p.textContent = 'プレビューの部品をクリックすると、ここで設定を変えられます。ドラッグで並べ替えられます。選んだ部品の中からドラッグすると、その部品ごと動きます。';
+    p.textContent = 'プレビューの部品をクリックすると、ここで設定を変えられます。見出しや文章はクリックした場所からそのまま書けます。ドラッグで並べ替えられます。選んだ部品の中からドラッグすると、その部品ごと動きます。';
     panel.append(p);
     return;
   }
@@ -482,17 +715,10 @@ function renderProps() {
   }
 
   if (comp.kind === 'text') {
-    if (node.children.every((c) => c.type === 'text')) {
-      const ta = document.createElement('textarea');
-      ta.value = node.children.map((c) => c.value).join('');
-      ta.addEventListener('change', () => apply((doc) => sf.edit.setInline(doc, path, ta.value === '' ? [] : [{ type: 'text', value: ta.value }]), path));
-      panel.append(field('文字', 'text', ta));
-    } else {
-      const note = document.createElement('p');
-      note.className = 'note';
-      note.textContent = '太字やリンクを含む文は、右下のソースで直してください。';
-      panel.append(note);
-    }
+    const note = document.createElement('p');
+    note.className = 'note';
+    note.textContent = '文字はプレビューの上でそのまま書けます。Ctrl+B で太字、Ctrl+I で斜体、Shift+Enter で改行、Esc で書き終わります。リンクの追加はまだソースで行います。';
+    panel.append(note);
   }
   if (comp.kind === 'raw') {
     const ta = document.createElement('textarea');
@@ -637,7 +863,9 @@ $('width-pc').addEventListener('click', () => setWidth(false));
 $('width-sp').addEventListener('click', () => setWidth(true));
 window.addEventListener('resize', () => drawOverlay());
 
-document.addEventListener('keydown', (e) => {
+document.addEventListener('keydown', onKey);
+
+function onKey(e) {
   const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement;
   if (typing) return;
   const mod = e.ctrlKey || e.metaKey;
@@ -651,12 +879,14 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     apply((doc) => sf.edit.remove(doc, state.selected), null);
   } else if (e.key === 'Escape') {
-    state.selected = null;
+    // After Esc ends editing, the next Esc climbs to the parent, then clears the selection.
+    // Assigned directly: going through select() would start editing again.
+    state.selected = state.selected && state.selected.length > 1 ? state.selected.slice(0, -1) : null;
     renderProps();
     renderBackdrop();
     drawOverlay();
   }
-});
+}
 
 // ------------------------------------------------------------------- start
 
