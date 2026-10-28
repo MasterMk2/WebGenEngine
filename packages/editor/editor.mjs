@@ -402,6 +402,8 @@ overlay.addEventListener('pointerup', (e) => {
 });
 
 overlay.addEventListener('pointercancel', () => {
+  // A cancelled text selection still leaves the text being written, so step aside as on pointerup.
+  if (pointer?.textSelect && state.editing) overlay.classList.add('editing');
   pointer = null;
   overlay.classList.remove('dragging');
   drawOverlay();
@@ -518,11 +520,13 @@ function finishEditing() {
     const probe = sf.parse(state.source);
     sf.edit.setInline(probe, ed.path, list);
     if (JSON.stringify(sf.toJSON(nodeAt(probe, ed.path))) === JSON.stringify(sf.toJSON(node))) {
+      showSaveState(restingSaveState());
       drawOverlay();
       return 'same';
     }
   } catch (e) {
     status(describeError(e), 'error');
+    showSaveState(restingSaveState());
     render();
     return 'changed';
   }
@@ -543,6 +547,7 @@ function toggleWrap(tag) {
   wrapper = wrapper.closest(tag);
   if (wrapper && el.contains(wrapper) && wrapper !== el) {
     wrapper.replaceWith(...wrapper.childNodes);
+    markTyping();
     return;
   }
   if (range.collapsed) return;
@@ -550,6 +555,7 @@ function toggleWrap(tag) {
   w.append(range.extractContents());
   range.insertNode(w);
   sel.selectAllChildren(w);
+  markTyping();
 }
 
 // Enter in a paragraph splits it at the caret, as in a document (editor-ux.md §4.2):
@@ -614,6 +620,11 @@ function onEditKey(e) {
   } else if (mod && (e.key.toLowerCase() === 'b' || e.key.toLowerCase() === 'i')) {
     e.preventDefault();
     toggleWrap(e.key.toLowerCase() === 'b' ? 'strong' : 'em');
+  } else if (mod && (e.key.toLowerCase() === 'd' || e.key === '/')) {
+    // Duplicate and the source toggle act on the block, so they end editing first.
+    e.preventDefault();
+    finishEditing();
+    onKey(e);
   }
 }
 
@@ -621,6 +632,7 @@ function watchPreview(d) {
   d.addEventListener('keydown', onEditKey);
   d.addEventListener('compositionstart', () => { if (state.editing) state.editing.composing = true; });
   d.addEventListener('compositionend', () => { if (state.editing) state.editing.composing = false; });
+  d.addEventListener('input', markTyping);
   d.addEventListener('beforeinput', (e) => {
     // Formatting, paragraphs and undo are handled above. Dragging text would delete it
     // here and drop foreign markup there, so drags inside the preview are refused.
@@ -1095,6 +1107,7 @@ const saving = {
   savedSource: null,
   savedAt: null,
   publishedSource: null,
+  failed: false,
   conflict: null, // the other tab's draft, until the user chooses
   timer: null,
   chain: Promise.resolve(),
@@ -1114,11 +1127,27 @@ function showSaveState(kind) {
   }[kind];
   el.textContent = text;
   el.className = `save-state ${kind === 'failed' || kind === 'conflict' ? 'error' : ''}`;
-  const live = state.source === saving.publishedSource;
+  // Text being written counts as a change, so "公開" can be pressed without leaving it first;
+  // the press saves the text and then publishes it.
+  const live = state.source === saving.publishedSource && !state.editing?.dirty;
   const pub = $('publish');
   pub.disabled = live;
   pub.textContent = live ? '公開済み' : '公開';
   pub.title = live ? '公開中のページと同じ内容です' : 'いまの内容を公開する';
+}
+
+// The save state when nothing is running: what the header shows after a no-op.
+function restingSaveState() {
+  if (saving.conflict) return 'conflict';
+  if (saving.failed) return 'failed';
+  return state.source !== saving.savedSource || state.editing?.dirty ? 'pending' : 'saved';
+}
+
+// The first change typed in the preview marks the text being written as unsaved.
+function markTyping() {
+  if (!state.editing || state.editing.dirty) return;
+  state.editing.dirty = true;
+  showSaveState(restingSaveState());
 }
 
 function scheduleSave() {
@@ -1145,13 +1174,14 @@ async function saveDraft() {
   showSaveState('saving');
   const res = await store.saveDraft(source, saving.revision);
   if (res.ok) {
-    Object.assign(saving, { revision: res.revision, savedSource: source, savedAt: res.savedAt });
-    showSaveState(state.source === source ? 'saved' : 'pending');
+    Object.assign(saving, { revision: res.revision, savedSource: source, savedAt: res.savedAt, failed: false });
+    showSaveState(restingSaveState());
     renderHistory();
   } else if (res.reason === 'conflict') {
     saving.conflict = res.draft;
     showConflict();
   } else {
+    saving.failed = true;
     showSaveState('failed');
     clearTimeout(saving.timer);
     saving.timer = setTimeout(saveNow, 5000);
@@ -1209,7 +1239,7 @@ async function publish() {
     return;
   }
   saving.publishedSource = source;
-  showSaveState('saved');
+  showSaveState(restingSaveState());
   renderHistory();
   status(`公開しました（${clock.format(res.version.at)}）`, 'ok', { label: '公開を取り消す', run: () => undoPublish(res.version.id) });
 }
@@ -1221,7 +1251,7 @@ async function undoPublish(versionId) {
     return;
   }
   saving.publishedSource = res.published ? await store.getVersion(res.published.id) : null;
-  showSaveState(saving.timer ? 'pending' : 'saved');
+  showSaveState(restingSaveState());
   renderHistory();
   status(res.published ? '公開を取り消しました。公開中のページは前の内容に戻りました' : '公開を取り消しました。このページは公開されていません', 'ok');
 }

@@ -158,18 +158,18 @@ button.danger { color: var(--danger); }
   transform: translate(12px, 12px);
 }
 
+/* History, settings and source stack up; the last one shown takes the remaining height. */
 .side {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   min-height: 0;
   border-left: 1px solid var(--line);
   background: var(--panel);
 }
-.props { padding: 12px; border-bottom: 1px solid var(--line); max-height: 45vh; overflow: auto; }
-.no-source .side { grid-template-rows: auto minmax(0, 1fr); }
-.no-source .props { max-height: none; border-bottom: 0; }
+.props { flex: none; padding: 12px; border-bottom: 1px solid var(--line); max-height: 45vh; overflow: auto; }
+.no-source .props { flex: 1 1 auto; max-height: none; border-bottom: 0; }
 .no-source .source-pane { display: none; }
-.history { padding: 12px; border-bottom: 1px solid var(--line); max-height: 45vh; overflow: auto; }
+.history { flex: none; padding: 12px; border-bottom: 1px solid var(--line); max-height: 30vh; overflow: auto; }
 .history h2 { margin: 0 0 8px; font-size: 15px; }
 .history ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .history li { display: flex; align-items: center; gap: 8px; }
@@ -193,7 +193,7 @@ button.danger { color: var(--danger); }
 .field textarea { min-height: 4.5em; resize: vertical; }
 .note { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
 
-.source-pane { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
+.source-pane { flex: 1 1 0; display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
 .pane-head { display: flex; justify-content: space-between; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--line); color: var(--muted); }
 .diff { font-size: 12px; }
 .code { position: relative; min-height: 0; }
@@ -223,5 +223,5 @@ button.danger { color: var(--danger); }
 @media (max-width: 900px) {
   .workspace { grid-template-columns: 1fr; grid-template-rows: 60vh auto; }
   .side { border-left: 0; border-top: 1px solid var(--line); }
-  .source-pane { height: 50vh; }
+  .source-pane { flex: none; height: 50vh; }
 }
