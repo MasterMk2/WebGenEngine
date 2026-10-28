@@ -66,6 +66,8 @@
 
 PHP の `renderPage($doc, $title, $lang = 'ja', $stylesheetHref = 'style.css')`、JS の `renderPage(doc, { title, lang = 'ja', stylesheetHref = 'style.css' })` は、`<!doctype html>` から `</html>` までを返す。本文は `<main class="wge-page">` に入れる。`lang` が言語コードの形でなければ `RenderError`（`E_LANG`）。
 
+JS の `renderFragment(doc, indent, { annotate: true })` は、エディタのプレビュー専用の書き出し（`editor.md` §4）。各部品に `data-wge-path` を付け、Html の中身を出さずに枠にする。PHP 版にはない。公開ページでは使わない。
+
 ## 6. 確かめていること
 
 - 共通テストデータ（`fixtures/render/cases.json`）を、JS と PHP の両方で通す

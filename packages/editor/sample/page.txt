@@ -1,0 +1,39 @@
+<!-- 喫茶店のトップページ。手で書いたサンプルなので、字下げや属性の順番がそろっていない -->
+<Section background="subtle" padding="xl">
+  <Stack align="center" gap="md">
+    <Heading align="center" level="1">喫茶 こもれび</Heading>
+    <Text size="lg" align="center">駅から歩いて 3 分。自家焙煎のコーヒーと、季節のケーキの店です。</Text>
+    <Stack justify="center" direction="horizontal" gap="sm">
+      <Button href="/menu">メニューを見る</Button>
+      <Button variant="secondary" href="/access">アクセス</Button>
+    </Stack>
+  </Stack>
+</Section>
+
+<Section padding="lg">
+    <Stack gap="md">
+        <Heading level="2">今月のおすすめ</Heading>
+        <Grid gap="md" columns="3">
+            <Stack gap="xs">
+                <Image alt="深煎りのコーヒー" src="sample/coffee.svg" ratio="4:3" />
+                <Heading level="3">深煎りブレンド</Heading>
+                <Text>ほろ苦く、<Strong>チョコレートのような</Strong>余韻が残ります。</Text>
+            </Stack>
+            <Stack gap="xs">
+                <Image alt="栗のケーキ" src="sample/cake.svg" ratio="4:3" />
+                <Heading level="3">和栗のモンブラン</Heading>
+                <Text>秋だけの限定です。</Text>
+            </Stack>
+            <Stack gap="xs">
+                <Image alt="焼き菓子" src="sample/cookie.svg" ratio="4:3" />
+                <Heading level="3">焼き菓子の詰め合わせ</Heading>
+                <Text>贈り物にどうぞ。</Text>
+            </Stack>
+        </Grid>
+    </Stack>
+</Section>
+
+<Section padding="md" background="inverse">
+  <Text align="center" size="sm">営業時間 8:00〜18:00（火曜定休）</Text>
+  <Html><iframe src="https://example.com/map" title="地図"></iframe></Html>
+</Section>

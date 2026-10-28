@@ -77,10 +77,11 @@ export function createRenderer(schema, theme, baseCss) {
     return list;
   }
 
-  function openTag(comp, node) {
+  function openTag(comp, node, path) {
     const r = comp.render;
     const tag = r.tag.replace(/\{([a-z]+)\}/g, (_, k) => node.props[k]);
     let s = `<${tag}`;
+    if (path) s += ` data-wge-path="${path.join('.')}"`;
     const classes = classesOf(comp, node.props);
     if (classes.length > 0) s += ` class="${classes.join(' ')}"`;
     for (const attr of r.attrs ?? []) {
@@ -91,27 +92,37 @@ export function createRenderer(schema, theme, baseCss) {
   }
 
   function inline(children) {
-    return children.map((c) => (c.type === 'text' ? escapeText(c.value) : renderNode(c, ''))).join('');
+    return children.map((c) => (c.type === 'text' ? escapeText(c.value) : renderNode(c, '', null))).join('');
   }
 
   // Returns null for nodes that are not published (comments).
-  function renderNode(node, indent) {
+  // `path` is set only in the editor preview: blocks get data-wge-path, and Html becomes
+  // an inert placeholder so its content never runs inside the editor.
+  function renderNode(node, indent, path) {
     if (node.type === 'comment') return null;
     const comp = components.get(node.type);
-    if (comp.kind === 'raw') return node.raw;
-    const [tag, open] = openTag(comp, node);
+    if (comp.kind === 'raw') {
+      if (!path) return node.raw;
+      return `<div data-wge-path="${path.join('.')}" class="wge-edit-raw">Html</div>`;
+    }
+    const [tag, open] = openTag(comp, node, path);
     if (comp.kind === 'void' || comp.kind === 'inline-void') return open;
     if (comp.kind === 'container') {
       const inner = indent + '  ';
-      const kids = node.children.map((c) => renderNode(c, inner)).filter((s) => s !== null);
+      const kids = node.children.map((c, i) => renderNode(c, inner, path && [...path, i])).filter((s) => s !== null);
       if (kids.length === 0) return `${open}</${tag}>`;
       return open + kids.map((k) => `\n${inner}${k}`).join('') + `\n${indent}</${tag}>`;
     }
     return `${open}${inline(node.children)}</${tag}>`;
   }
 
-  function renderFragment(doc, indent = '') {
-    return doc.children.map((c) => renderNode(c, indent)).filter((s) => s !== null).map((s) => `${indent}${s}\n`).join('');
+  // `annotate` is for the editor preview only; published pages never carry the extra attributes.
+  function renderFragment(doc, indent = '', { annotate = false } = {}) {
+    return doc.children
+      .map((c, i) => renderNode(c, indent, annotate ? [i] : null))
+      .filter((s) => s !== null)
+      .map((s) => `${indent}${s}\n`)
+      .join('');
   }
 
   function renderPage(doc, { title, lang = 'ja', stylesheetHref = 'style.css' }) {
