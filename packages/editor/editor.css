@@ -45,6 +45,12 @@ button:hover:not(:disabled) { border-color: var(--accent); }
 button:disabled { opacity: 0.45; cursor: default; }
 button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
 button.quiet { border-color: transparent; color: var(--muted); margin-left: auto; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; padding-inline: 16px; }
+button.primary:hover:not(:disabled) { background: #0842a0; }
+.group.end { margin-left: auto; }
+.page-name { color: var(--muted); }
+.save-state { color: var(--muted); font-size: 13px; min-width: 9em; }
+.save-state.error { color: var(--danger); }
 button.danger { color: var(--danger); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
@@ -85,6 +91,61 @@ button.danger { color: var(--danger); }
   white-space: nowrap;
 }
 .guide { position: absolute; pointer-events: none; background: #e37400; border-radius: 2px; }
+.guide.insert { background: var(--accent); }
+
+/* Toolbar of the selected block, the insertion point and its menu: siblings of the overlay,
+   so they keep their clicks while the overlay captures the pointer or steps aside. */
+.blockbar {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: calc(100% - 8px);
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.blockbar[hidden], .insert-point[hidden], .insert-menu[hidden] { display: none; }
+.blockbar button { padding: 2px 8px; border-color: transparent; min-height: 28px; }
+.blockbar button:hover:not(:disabled) { border-color: var(--line); }
+.blockbar .sep { width: 1px; align-self: stretch; margin: 2px; background: var(--line); }
+.blockbar .handle { cursor: grab; touch-action: none; font-size: 15px; padding-inline: 6px; }
+.blockbar .crumbs { display: flex; align-items: center; min-width: 0; overflow: hidden; }
+.blockbar .crumbs span { color: var(--muted); padding-inline: 1px; }
+.blockbar .crumbs button[aria-current] { font-weight: 600; }
+.insert-point {
+  position: absolute;
+  z-index: 2;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 50%;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+  line-height: 1;
+  transform: translate(-50%, -50%);
+}
+.insert-menu {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  gap: 2px;
+  min-width: 10em;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.16);
+}
+.insert-menu button { text-align: left; border-color: transparent; }
+.insert-menu button:hover, .insert-menu button:focus-visible { background: var(--accent-soft); }
+.insert-menu hr { width: 100%; margin: 2px 0; border: 0; border-top: 1px solid var(--line); }
 .ghost {
   position: absolute;
   pointer-events: none;
@@ -105,6 +166,15 @@ button.danger { color: var(--danger); }
   background: var(--panel);
 }
 .props { padding: 12px; border-bottom: 1px solid var(--line); max-height: 45vh; overflow: auto; }
+.no-source .side { grid-template-rows: auto minmax(0, 1fr); }
+.no-source .props { max-height: none; border-bottom: 0; }
+.no-source .source-pane { display: none; }
+.history { padding: 12px; border-bottom: 1px solid var(--line); max-height: 45vh; overflow: auto; }
+.history h2 { margin: 0 0 8px; font-size: 15px; }
+.history ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.history li { display: flex; align-items: center; gap: 8px; }
+.history li span { flex: 1; }
+.history .live { color: var(--ok); font-weight: 600; }
 .props h2 { margin: 0 0 8px; font-size: 15px; display: flex; align-items: baseline; gap: 8px; }
 .props h2 code { font: 12px var(--mono); color: var(--muted); }
 .props .empty { margin: 0; color: var(--muted); }
@@ -142,7 +212,9 @@ button.danger { color: var(--danger); }
 .code textarea { background: transparent; resize: none; outline: none; }
 .code textarea:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
 
-.status { padding: 4px 12px; min-height: 1.5em; border-top: 1px solid var(--line); background: var(--panel); color: var(--muted); font-size: 13px; }
+.statusbar { display: flex; align-items: center; gap: 8px; padding: 4px 12px; min-height: 2em; border-top: 1px solid var(--line); background: var(--panel); font-size: 13px; }
+.statusbar button { padding: 1px 8px; }
+.status { color: var(--muted); }
 .status.error { color: var(--danger); }
 .status.ok { color: var(--ok); }
 

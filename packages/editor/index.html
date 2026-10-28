@@ -9,25 +9,34 @@
 <body>
 <header class="toolbar">
   <strong class="brand">WebGenEngine</strong>
-  <div class="group" role="group" aria-label="履歴">
+  <span class="page-name">トップページ</span>
+  <div class="group" role="group" aria-label="操作の履歴">
     <button type="button" id="undo" title="元に戻す (Ctrl+Z)">元に戻す</button>
     <button type="button" id="redo" title="やり直す (Ctrl+Y)">やり直す</button>
   </div>
-  <div class="group" role="group" aria-label="部品を追加" id="palette"></div>
   <div class="group" role="group" aria-label="プレビューの幅">
     <button type="button" id="width-pc" aria-pressed="true">PC</button>
     <button type="button" id="width-sp" aria-pressed="false">スマホ</button>
   </div>
-  <button type="button" id="reset" class="quiet">サンプルに戻す</button>
+  <span class="save-state" id="save-state" role="status" aria-live="polite"></span>
+  <div class="group end">
+    <button type="button" id="history-toggle" aria-pressed="false" aria-controls="history">履歴</button>
+    <button type="button" id="source-toggle" aria-pressed="false" title="ソースを出す・隠す (Ctrl+/)">ソース</button>
+    <button type="button" id="publish" class="primary">公開</button>
+  </div>
 </header>
-<main class="workspace">
+<main class="workspace no-source" id="workspace">
   <section class="preview-pane" aria-label="プレビュー">
     <div class="preview-frame" id="frame-wrap">
       <iframe id="preview" title="プレビュー" sandbox="allow-same-origin"></iframe>
       <div class="overlay" id="overlay" aria-hidden="true"></div>
+      <div class="blockbar" id="blockbar" role="toolbar" aria-label="選んだ部品の操作" hidden></div>
+      <button type="button" class="insert-point" id="insert-point" title="ここに部品を足す" aria-label="ここに部品を足す" hidden>＋</button>
+      <div class="insert-menu" id="insert-menu" role="menu" aria-label="足す部品" hidden></div>
     </div>
   </section>
   <aside class="side">
+    <section class="history" id="history" aria-label="履歴" hidden></section>
     <section class="props" id="props" aria-label="選んだ部品"></section>
     <section class="source-pane" aria-label="ソース">
       <div class="pane-head">
@@ -41,7 +50,11 @@
     </section>
   </aside>
 </main>
-<footer class="status" id="status" role="status" aria-live="polite"></footer>
+<footer class="statusbar">
+  <span class="status" id="status" role="status" aria-live="polite"></span>
+  <button type="button" id="status-action" hidden></button>
+  <button type="button" id="reset" class="quiet" title="サンプルに戻す（開発用）">サンプルに戻す</button>
+</footer>
 <script type="module" src="editor.mjs"></script>
 </body>
 </html>

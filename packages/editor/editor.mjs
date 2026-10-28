@@ -64,6 +64,7 @@ const state = {
   sourceError: null,
   selected: null,
   hover: null,
+  insertAt: null, // { parent, index, guide } of the insertion point under the pointer
   editing: null, // { path, el } while a block is edited in place in the preview
   undo: [],
   redo: [],
@@ -87,10 +88,18 @@ function nodeAt(doc, path) {
 const kindOf = (node) => (node.type === 'document' ? 'container' : components.get(node.type)?.kind);
 const axisOf = (node) => (node.type === 'Grid' || (node.type === 'Stack' && node.props.direction === 'horizontal') ? 'flow' : 'vertical');
 
-function status(message, tone = '') {
+// `action` ({ label, run }) adds a button after the message, such as "元に戻す".
+function status(message, tone = '', action = null) {
   const el = $('status');
   el.textContent = message;
   el.className = `status ${tone}`;
+  const b = $('status-action');
+  b.hidden = !action;
+  b.textContent = action?.label ?? '';
+  b.onclick = action && (() => {
+    status('');
+    action.run();
+  });
 }
 
 function describeError(e) {
@@ -252,25 +261,24 @@ function addBox(cls, rect, text) {
   return el;
 }
 
-function addLabel(rect, text) {
-  const el = addBox('label', { left: rect.left, top: Math.max(0, rect.top - 18), width: 'auto', height: 18 }, text);
-  el.style.width = '';
-  return el;
+function addGuide(g, cls = '') {
+  const line = document.createElement('div');
+  line.className = `guide ${cls}`;
+  const vertical = g.x1 === g.x2;
+  Object.assign(line.style, vertical
+    ? { left: `${g.x1 - 1.5}px`, top: `${g.y1}px`, width: '3px', height: `${g.y2 - g.y1}px` }
+    : { left: `${g.x1}px`, top: `${g.y1 - 1.5}px`, width: `${g.x2 - g.x1}px`, height: '3px' });
+  overlay.append(line);
 }
 
 function drawOverlay(drag = null) {
   overlay.replaceChildren();
+  placeBlockbar(drag ? null : state.selected && elementFor(state.selected));
+  placeInsertPoint(drag || state.editing ? null : state.insertAt);
   if (drag) {
     if (drag.target) {
       addBox('target', drag.target.rect);
-      const g = drag.target.guide;
-      const line = document.createElement('div');
-      line.className = 'guide';
-      const vertical = g.x1 === g.x2;
-      Object.assign(line.style, vertical
-        ? { left: `${g.x1 - 1.5}px`, top: `${g.y1}px`, width: '3px', height: `${g.y2 - g.y1}px` }
-        : { left: `${g.x1}px`, top: `${g.y1 - 1.5}px`, width: `${g.x2 - g.x1}px`, height: '3px' });
-      overlay.append(line);
+      addGuide(drag.target.guide);
     }
     const ghost = document.createElement('div');
     ghost.className = 'ghost';
@@ -285,13 +293,9 @@ function drawOverlay(drag = null) {
   }
   if (state.selected) {
     const el = elementFor(state.selected);
-    if (el) {
-      const r = el.getBoundingClientRect();
-      addBox('selected', r);
-      const name = NAMES[nodeAt(state.doc, state.selected).type];
-      addLabel(r, state.editing ? `${name}（書いています。Esc で終わる）` : name);
-    }
+    if (el) addBox('selected', el.getBoundingClientRect());
   }
+  if (state.insertAt && !state.editing) addGuide(state.insertAt.guide, 'insert');
 }
 
 // -------------------------------------------------- pointer: select and drag
@@ -326,27 +330,52 @@ function dropTarget(from, point) {
 
 let pointer = null;
 
+// Pointer position in preview coordinates; the overlay covers the iframe exactly.
+function overlayPoint(e) {
+  const r = overlay.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
 overlay.addEventListener('pointerdown', (e) => {
   if (e.button !== 0 || state.sourceError) return;
-  const point = { x: e.offsetX, y: e.offsetY };
+  const point = overlayPoint(e);
   const path = hitPath(point);
+  const node = path && nodeAt(state.doc, path);
+  // Text is written where it is clicked (U1, plan A): the caret goes down at once and a
+  // drag selects text. Text blocks move only by the handle of the block toolbar.
+  if (node && kindOf(node) === 'text') {
+    e.preventDefault(); // keeps the focus that startEditing puts in the preview
+    select(path, point, { holdOverlay: true });
+    if (state.editing) {
+      pointer = { textSelect: true, id: e.pointerId };
+      overlay.setPointerCapture(e.pointerId);
+    }
+    return;
+  }
   // Dragging inside the selected block moves that block, so a whole card can be
-  // picked up after "親を選ぶ"; otherwise the innermost block under the pointer moves.
+  // picked up after choosing it in the trail; otherwise the innermost block under the pointer moves.
   const drag = state.selected && path && isPrefix(state.selected, path) ? state.selected : path;
   pointer = { start: point, path, drag, dragging: false, id: e.pointerId };
   overlay.setPointerCapture(e.pointerId);
 });
 
 overlay.addEventListener('pointermove', (e) => {
-  const point = { x: e.offsetX, y: e.offsetY };
+  const point = overlayPoint(e);
   if (!pointer) {
     const path = hitPath(point);
-    if (!samePath(path, state.hover)) {
+    const at = insertPointAt(point);
+    if (!samePath(path, state.hover) || !sameInsert(at, state.insertAt)) {
       state.hover = path && path.length > 0 ? path : null;
+      state.insertAt = at;
       drawOverlay();
     }
     return;
   }
+  if (pointer.textSelect) {
+    extendTextSelection(point);
+    return;
+  }
+  if (!previewDoc()?.querySelector('main')) return; // the preview is loading again
   if (!pointer.dragging) {
     const moved = Math.hypot(point.x - pointer.start.x, point.y - pointer.start.y);
     if (moved < 5 || !pointer.drag || pointer.drag.length === 0) return;
@@ -366,8 +395,14 @@ overlay.addEventListener('pointerup', (e) => {
   const p = pointer;
   pointer = null;
   overlay.classList.remove('dragging');
+  if (p.textSelect) {
+    if (state.editing) overlay.classList.add('editing');
+    return;
+  }
   if (!p.dragging) {
-    select(p.path, p.start);
+    // A press on the handle that did not move leaves the selection as it is.
+    if (!p.fromHandle) select(p.path, p.start);
+    drawOverlay();
     return;
   }
   const args = p.target ? moveArgs(p.drag, p.target.parent, p.target.index) : { error: 'ここには置けません' };
@@ -382,9 +417,12 @@ overlay.addEventListener('pointercancel', () => {
   drawOverlay();
 });
 
-overlay.addEventListener('pointerleave', () => {
+overlay.addEventListener('pointerleave', (e) => {
   if (pointer) return;
+  // Moving onto the insertion point keeps it; it sits above the overlay.
+  if (e.relatedTarget === insertPoint) return;
   state.hover = null;
+  state.insertAt = null;
   drawOverlay();
 });
 
@@ -403,13 +441,29 @@ overlay.addEventListener('wheel', (e) => {
 // read back with inlineFromDom and written as one setInline edit, one undo step.
 
 // Selects a block; a text block also starts editing at `point` (preview coordinates).
-function select(path, point = null) {
+function select(path, point = null, opts = {}) {
   state.selected = path && path.length > 0 ? path : null;
   renderProps();
   renderBackdrop(true);
   drawOverlay();
   const node = state.selected && nodeAt(state.doc, state.selected);
-  if (node && kindOf(node) === 'text') startEditing(state.selected, point);
+  if (node && kindOf(node) === 'text') startEditing(state.selected, point, opts);
+}
+
+// Selects a block without starting to write in it (the trail, Esc, the source caret).
+function selectOnly(path) {
+  state.selected = path && path.length > 0 ? path : null;
+  renderProps();
+  renderBackdrop(true);
+  drawOverlay();
+}
+
+// While the button is held after a press on text, moving selects text from the caret.
+function extendTextSelection(point) {
+  const ed = state.editing;
+  if (!ed) return;
+  const range = caretRange(previewDoc(), point);
+  if (range && ed.el.contains(range.startContainer)) previewDoc().getSelection().extend(range.startContainer, range.startOffset);
 }
 
 function caretRange(d, { x, y }) {
@@ -424,13 +478,16 @@ function caretRange(d, { x, y }) {
 }
 
 // `point` places the caret where the pointer was; without it the caret goes to the end,
-// or to the start when `atStart` (the second half of a paragraph split by Enter).
-function startEditing(path, point, { atStart = false } = {}) {
+// to the start when `atStart` (the second half of a paragraph split by Enter), or the
+// whole text is selected when `selectAll` (a block just added, so typing replaces it).
+// `holdOverlay` keeps the overlay catching the pointer until the button is released.
+function startEditing(path, point, { atStart = false, selectAll = false, holdOverlay = false } = {}) {
   const el = elementFor(path);
   if (!el || state.sourceError) return;
   state.editing = { path, el, composing: false };
+  state.insertAt = null;
   el.contentEditable = 'true';
-  overlay.classList.add('editing');
+  if (!holdOverlay) overlay.classList.add('editing');
   el.focus({ preventScroll: true });
   const d = previewDoc();
   const sel = d.getSelection();
@@ -441,7 +498,7 @@ function startEditing(path, point, { atStart = false } = {}) {
   } else {
     sel.selectAllChildren(el);
     if (atStart) sel.collapseToStart();
-    else sel.collapseToEnd();
+    else if (!selectAll) sel.collapseToEnd();
   }
   drawOverlay();
 }
@@ -608,6 +665,212 @@ document.addEventListener('pointerdown', (e) => {
 // Typing not yet saved would be lost on reload or close.
 window.addEventListener('pagehide', () => finishEditing());
 
+// ------------------------------------------------------- block toolbar
+// Shown next to the selected block (editor-ux.md §3.1): the handle that drags it, the trail
+// of its parents, moving, adding after it, duplicating and removing. Built only when the
+// selection changes; drawOverlay only moves it, so a pressed button is never replaced between
+// pointerdown and click. Buttons read state.selected when clicked: a click while writing
+// saves the text first, which can change the block or remove it.
+
+const blockbar = $('blockbar');
+const insertPoint = $('insert-point');
+const insertMenu = $('insert-menu');
+let blockbarKey = null;
+
+const trailTypes = (path) => path.map((_, i) => nodeAt(state.doc, path.slice(0, i + 1))?.type);
+
+function renderBlockbar() {
+  const path = state.selected;
+  const key = path ? JSON.stringify([path, trailTypes(path)]) : null;
+  if (key === blockbarKey) return;
+  blockbarKey = key;
+  blockbar.replaceChildren();
+  if (!path) return;
+  const handle = button('⠿', null, 'handle');
+  handle.title = 'ドラッグで動かす（Alt+↑↓ でも動かせます）';
+  handle.setAttribute('aria-label', '動かす');
+  handle.addEventListener('pointerdown', startHandleDrag);
+
+  // The trail replaces "select the parent": each step selects that block. Long trails
+  // keep the first step and the last two.
+  const crumbs = document.createElement('span');
+  crumbs.className = 'crumbs';
+  const types = trailTypes(path);
+  const shown = types.length > 4 ? [0, null, types.length - 2, types.length - 1] : types.map((_, i) => i);
+  shown.forEach((i, n) => {
+    if (n > 0) {
+      const sep = document.createElement('span');
+      sep.textContent = i === null ? '…' : '›';
+      crumbs.append(sep);
+    }
+    if (i === null) return;
+    const depth = i + 1;
+    const name = NAMES[types[i]] ?? types[i];
+    const b = button(name, () => {
+      if (state.selected && depth < state.selected.length) selectOnly(state.selected.slice(0, depth));
+    });
+    if (depth === path.length) b.setAttribute('aria-current', 'true');
+    else b.title = `外側の${name}を選ぶ`;
+    crumbs.append(b);
+  });
+
+  const sep = () => Object.assign(document.createElement('span'), { className: 'sep' });
+  const up = button('↑', () => moveBy(-1));
+  up.title = '前へ (Alt+↑)';
+  up.setAttribute('aria-label', '前へ');
+  const down = button('↓', () => moveBy(1));
+  down.title = '後ろへ (Alt+↓)';
+  down.setAttribute('aria-label', '後ろへ');
+  const add = button('＋', (e) => {
+    const sel = state.selected;
+    if (sel) openInsertMenu({ parent: sel.slice(0, -1), index: sel.at(-1) + 1 }, e.currentTarget);
+  });
+  add.title = 'この後ろに部品を足す';
+  add.setAttribute('aria-label', 'この後ろに部品を足す');
+  const dup = button('複製', duplicateSelected);
+  dup.title = '複製 (Ctrl+D)';
+  const del = button('削除', removeSelected, 'danger');
+  del.title = '削除 (Delete)';
+  blockbar.append(handle, crumbs, sep(), up, down, sep(), add, dup, del);
+}
+
+// Above the block when there is room, else just inside its top edge.
+function placeBlockbar(el) {
+  if (!el) {
+    blockbar.hidden = true;
+    return;
+  }
+  const r = el.getBoundingClientRect();
+  const height = overlay.clientHeight;
+  if (r.bottom < 0 || r.top > height) {
+    blockbar.hidden = true;
+    return;
+  }
+  blockbar.hidden = false;
+  const h = blockbar.offsetHeight;
+  let top = r.top - h - 6;
+  if (top < 4) top = Math.max(4, r.top + 4);
+  top = Math.min(top, height - h - 4);
+  const left = Math.max(4, Math.min(r.left, overlay.clientWidth - blockbar.offsetWidth - 4));
+  Object.assign(blockbar.style, { left: `${left}px`, top: `${top}px` });
+}
+
+function startHandleDrag(e) {
+  if (e.button !== 0 || !state.selected || state.sourceError) return;
+  e.preventDefault();
+  pointer = { start: overlayPoint(e), path: state.selected, drag: state.selected, dragging: false, fromHandle: true, id: e.pointerId };
+  overlay.setPointerCapture(e.pointerId);
+}
+
+function duplicateSelected() {
+  const path = state.selected;
+  if (!path) return;
+  const parent = path.slice(0, -1);
+  const index = path.at(-1) + 1;
+  apply((doc) => sf.edit.insert(doc, parent, index, sf.toJSON(nodeAt(doc, path))), [...parent, index]);
+}
+
+function removeSelected() {
+  const path = state.selected;
+  if (!path) return;
+  const name = NAMES[nodeAt(state.doc, path).type];
+  if (apply((doc) => sf.edit.remove(doc, path), null)) status(`${name}を削除しました`, '', { label: '元に戻す', run: undo });
+}
+
+// -------------------------------------------------- insertion points
+// Hovering near the gap between two blocks shows a line and a "＋" there (editor-ux.md
+// §4.2), so where a new block goes is visible before pressing. The gap is found the same
+// way as a drop target, so adding and dragging agree on the slots.
+
+const NO_SOURCE = [-1]; // dropTarget's `from`, for a block that is not in the tree yet
+const sameInsert = (a, b) => (a && b ? samePath(a.parent, b.parent) && a.index === b.index : a === b);
+
+function insertPointAt(point) {
+  if (state.editing || state.sourceError || !insertMenu.hidden || !previewDoc()?.querySelector('main')) return null;
+  const t = dropTarget(NO_SOURCE, point);
+  const g = t.guide;
+  const empty = !nodeAt(state.doc, t.parent).children.some((c) => c.type !== 'comment');
+  if (!empty && (g.x1 === g.x2 ? Math.abs(point.x - g.x1) : Math.abs(point.y - g.y1)) > 12) return null;
+  return { parent: t.parent, index: t.index, guide: g };
+}
+
+function placeInsertPoint(at) {
+  insertPoint.hidden = !at;
+  if (!at) return;
+  const g = at.guide;
+  Object.assign(insertPoint.style, { left: `${(g.x1 + g.x2) / 2}px`, top: `${(g.y1 + g.y2) / 2}px` });
+}
+
+insertPoint.addEventListener('click', () => {
+  if (state.insertAt) openInsertMenu(state.insertAt, insertPoint);
+});
+insertPoint.addEventListener('pointerleave', (e) => {
+  if (e.relatedTarget === overlay) return;
+  state.insertAt = null;
+  drawOverlay();
+});
+
+// The menu lists the everyday blocks first; the boxes for layout come after a rule.
+const MENU = [['Heading', 'Text', 'Image', 'Button'], ['Section', 'Stack', 'Grid']];
+let menuTarget = null;
+
+MENU.forEach((names, i) => {
+  if (i > 0) insertMenu.append(document.createElement('hr'));
+  for (const name of names) {
+    const b = button(NAMES[name], () => insertBlock(name));
+    b.setAttribute('role', 'menuitem');
+    insertMenu.append(b);
+  }
+});
+
+function openInsertMenu(target, anchor) {
+  menuTarget = { parent: target.parent, index: target.index };
+  state.insertAt = null;
+  insertMenu.hidden = false;
+  const wrap = frameWrap.getBoundingClientRect();
+  const a = anchor.getBoundingClientRect();
+  const w = insertMenu.offsetWidth;
+  const h = insertMenu.offsetHeight;
+  let top = a.bottom - wrap.top + 4;
+  if (top + h > wrap.height && a.top - wrap.top - h - 4 >= 0) top = a.top - wrap.top - h - 4;
+  const left = Math.max(4, Math.min(a.left - wrap.left, wrap.width - w - 4));
+  Object.assign(insertMenu.style, { left: `${left}px`, top: `${top}px` });
+  insertMenu.querySelector('button').focus();
+  drawOverlay();
+}
+
+function closeInsertMenu() {
+  if (insertMenu.hidden) return;
+  insertMenu.hidden = true;
+  menuTarget = null;
+}
+
+function insertBlock(name) {
+  const target = menuTarget;
+  closeInsertMenu();
+  if (!target) return;
+  const path = [...target.parent, target.index];
+  if (!apply((doc) => sf.edit.insert(doc, target.parent, target.index, structuredClone(TEMPLATES[name])), path)) return;
+  // A new heading or paragraph starts with its placeholder selected, so typing replaces it.
+  if (components.get(name).kind === 'text') afterLoad = () => startEditing(path, null, { selectAll: true });
+}
+
+insertMenu.addEventListener('keydown', (e) => {
+  const items = [...insertMenu.querySelectorAll('button')];
+  const i = items.indexOf(document.activeElement);
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopPropagation();
+    closeInsertMenu();
+  } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus();
+  }
+});
+document.addEventListener('pointerdown', (e) => {
+  if (!insertMenu.hidden && !insertMenu.contains(e.target)) closeInsertMenu();
+}, true);
+
 // ---------------------------------------------------------- property panel
 
 function field(labelText, attrName, control) {
@@ -617,9 +880,11 @@ function field(labelText, attrName, control) {
   const id = `f-${attrName}`;
   label.htmlFor = id;
   label.textContent = `${labelText} `;
-  const code = document.createElement('code');
-  code.textContent = attrName;
-  label.append(code);
+  if (sourceShown()) {
+    const code = document.createElement('code');
+    code.textContent = attrName;
+    label.append(code);
+  }
   control.id = id;
   row.append(label, control);
   return row;
@@ -633,7 +898,10 @@ function attrControl(attr, value, onChange) {
   if (options) {
     const select = document.createElement('select');
     if (!attr.required) select.add(new Option('（指定なし）', ''));
-    for (const v of options) select.add(new Option(VALUES[v] && attr.type !== 'space' ? `${VALUES[v]} (${v})` : v, v));
+    for (const v of options) {
+      const label = VALUES[v] && attr.type !== 'space' ? VALUES[v] : v;
+      select.add(new Option(sourceShown() && label !== v ? `${label} (${v})` : label, v));
+    }
     select.value = value ?? '';
     select.addEventListener('change', () => onChange(select.value === '' ? null : select.value));
     return select;
@@ -656,6 +924,7 @@ function button(text, onClick, cls = '') {
 
 function moveBy(delta) {
   const path = state.selected;
+  if (!path) return;
   const parent = path.slice(0, -1);
   const i = path.at(-1);
   const siblings = nodeAt(state.doc, parent).children;
@@ -670,44 +939,33 @@ function moveBy(delta) {
 let propsKey = null;
 
 function renderProps() {
+  renderBlockbar();
   const panel = $('props');
   const path = state.selected;
   const node = path && nodeAt(state.doc, path);
   // Ending an edit re-renders on pointerdown, before the click that ended it lands.
   // Rebuilding an unchanged panel would remove the control under that click.
-  const key = JSON.stringify([path, node?.type, node?.props]);
+  const key = JSON.stringify([path, node?.type, node?.props, sourceShown()]);
   if (key === propsKey) return;
   propsKey = key;
   panel.replaceChildren();
   if (!node) {
     const p = document.createElement('p');
     p.className = 'empty';
-    p.textContent = 'プレビューの部品をクリックすると、ここで設定を変えられます。見出しや文章はクリックした場所からそのまま書けます。ドラッグで並べ替えられます。選んだ部品の中からドラッグすると、その部品ごと動きます。';
+    p.textContent = 'プレビューの部品をクリックすると、ここで設定を変えられます。見出しや文章はクリックした場所からそのまま書けます。部品は、選んだときに出る ⠿ をドラッグして動かします。部品のあいだにマウスを置くと出る ＋ で、そこに部品を足せます。';
     panel.append(p);
     return;
   }
   const comp = components.get(node.type);
   const h = document.createElement('h2');
   h.textContent = NAMES[node.type] ?? node.type;
-  const code = document.createElement('code');
-  code.textContent = `<${node.type}>`;
-  h.append(code);
-  const actions = document.createElement('div');
-  actions.className = 'actions';
-  const parentButton = button('親を選ぶ', () => {
-    state.selected = path.slice(0, -1);
-    renderProps();
-    renderBackdrop(true);
-    drawOverlay();
-  });
-  parentButton.disabled = path.length < 2;
-  actions.append(
-    parentButton,
-    button('↑ 前へ', () => moveBy(-1)),
-    button('↓ 後ろへ', () => moveBy(1)),
-    button('削除', () => apply((doc) => sf.edit.remove(doc, path), null), 'danger'),
-  );
-  panel.append(h, actions);
+  // Names from the source are shown only to those who read the source (editor-ux.md §7).
+  if (sourceShown()) {
+    const code = document.createElement('code');
+    code.textContent = `<${node.type}>`;
+    h.append(code);
+  }
+  panel.append(h);
 
   for (const attr of comp.attributes) {
     const control = attrControl(attr, node.props[attr.name], (value) => apply((doc) => sf.edit.setProp(doc, path, attr.name, value), path));
@@ -717,7 +975,7 @@ function renderProps() {
   if (comp.kind === 'text') {
     const note = document.createElement('p');
     note.className = 'note';
-    note.textContent = '文字はプレビューの上でそのまま書けます。Ctrl+B で太字、Ctrl+I で斜体、Shift+Enter で改行、Esc で書き終わります。リンクの追加はまだソースで行います。';
+    note.textContent = '文字はプレビューの上でそのまま書けます。Ctrl+B で太字、Ctrl+I で斜体、Enter で次の段落、Shift+Enter で改行、Esc で書き終わります。リンクの追加はまだソースで行います。';
     panel.append(note);
   }
   if (comp.kind === 'raw') {
@@ -819,25 +1077,32 @@ textarea.addEventListener('keyup', (e) => {
 
 // ---------------------------------------------------------------- toolbar
 
-for (const name of Object.keys(TEMPLATES)) {
-  $('palette').append(button(`＋${NAMES[name]}`, () => {
-    // Into the selected container, else right after the selected block, else at the end of the page.
-    const sel = state.selected;
-    const selNode = sel && nodeAt(state.doc, sel);
-    let parent;
-    let index;
-    if (selNode && kindOf(selNode) === 'container') {
-      parent = sel;
-      index = selNode.children.length;
-    } else if (sel) {
-      parent = sel.slice(0, -1);
-      index = sel.at(-1) + 1;
-    } else {
-      parent = [];
-      index = state.doc.children.length;
-    }
-    apply((doc) => sf.edit.insert(doc, parent, index, structuredClone(TEMPLATES[name])), [...parent, index]);
-  }));
+// The source is hidden unless asked for (U2), and the choice is remembered.
+const SOURCE_KEY = 'wge-editor-show-source';
+const workspace = $('workspace');
+const sourceShown = () => !workspace.classList.contains('no-source');
+
+function showSource(on) {
+  if (!on && state.sourceError) {
+    status('ソースのエラーを直してから隠してください', 'error');
+    return;
+  }
+  workspace.classList.toggle('no-source', !on);
+  $('source-toggle').setAttribute('aria-pressed', String(on));
+  try {
+    localStorage.setItem(SOURCE_KEY, on ? '1' : '0');
+  } catch {
+    // Not remembered without storage.
+  }
+  renderProps();
+  renderBackdrop(true);
+  requestAnimationFrame(() => drawOverlay());
+}
+$('source-toggle').addEventListener('click', () => showSource(!sourceShown()));
+try {
+  if (localStorage.getItem(SOURCE_KEY) === '1') showSource(true);
+} catch {
+  // Hidden by default.
 }
 
 $('undo').addEventListener('click', undo);
@@ -869,22 +1134,29 @@ function onKey(e) {
   const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement;
   if (typing) return;
   const mod = e.ctrlKey || e.metaKey;
-  if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+  const key = e.key.toLowerCase();
+  if (mod && key === '/') {
+    e.preventDefault();
+    showSource(!sourceShown());
+  } else if (mod && key === 'z' && !e.shiftKey) {
     e.preventDefault();
     undo();
-  } else if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
+  } else if (mod && (key === 'y' || (key === 'z' && e.shiftKey))) {
     e.preventDefault();
     redo();
+  } else if (mod && key === 'd' && state.selected) {
+    e.preventDefault();
+    duplicateSelected();
+  } else if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && state.selected) {
+    e.preventDefault();
+    moveBy(e.key === 'ArrowUp' ? -1 : 1);
   } else if ((e.key === 'Delete' || e.key === 'Backspace') && state.selected) {
     e.preventDefault();
-    apply((doc) => sf.edit.remove(doc, state.selected), null);
+    removeSelected();
   } else if (e.key === 'Escape') {
     // After Esc ends editing, the next Esc climbs to the parent, then clears the selection.
-    // Assigned directly: going through select() would start editing again.
-    state.selected = state.selected && state.selected.length > 1 ? state.selected.slice(0, -1) : null;
-    renderProps();
-    renderBackdrop();
-    drawOverlay();
+    // selectOnly, since select() would start editing again.
+    selectOnly(state.selected && state.selected.length > 1 ? state.selected.slice(0, -1) : null);
   }
 }
 
