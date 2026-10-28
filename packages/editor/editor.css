@@ -173,7 +173,8 @@ button.danger { color: var(--danger); }
 .history h2 { margin: 0 0 8px; font-size: 15px; }
 .history ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .history li { display: flex; align-items: center; gap: 8px; }
-.history li span { flex: 1; }
+.history li span:first-child { flex: 1; }
+.history .note { margin: 0 0 8px; }
 .history .live { color: var(--ok); font-weight: 600; }
 .props h2 { margin: 0 0 8px; font-size: 15px; display: flex; align-items: baseline; gap: 8px; }
 .props h2 code { font: 12px var(--mono); color: var(--muted); }
@@ -215,6 +216,7 @@ button.danger { color: var(--danger); }
 .statusbar { display: flex; align-items: center; gap: 8px; padding: 4px 12px; min-height: 2em; border-top: 1px solid var(--line); background: var(--panel); font-size: 13px; }
 .statusbar button { padding: 1px 8px; }
 .status { color: var(--muted); }
+.status-actions { display: flex; gap: 6px; }
 .status.error { color: var(--danger); }
 .status.ok { color: var(--ok); }
 

@@ -6,6 +6,7 @@ import { createSourceFormat, SourceError, EditError } from '../source/js/source-
 import { createRenderer } from '../source/js/render.mjs';
 import { slotIndex, slotGuide, nearEdge, moveArgs } from './slots.mjs';
 import { inlineFromDom } from './inline-dom.mjs';
+import { createPageStore } from './store.mjs';
 
 const fetchText = (p) => fetch(p).then((r) => {
   if (!r.ok) throw new Error(`${p}: ${r.status}`);
@@ -41,7 +42,7 @@ const TEMPLATES = {
   Button: { type: 'Button', props: { href: '/' }, children: [{ type: 'text', value: 'ボタン' }] },
   Image: { type: 'Image', props: { src: 'sample/coffee.svg', alt: '' } },
 };
-const STORAGE_KEY = 'wge-editor-source';
+const LEGACY_KEY = 'wge-editor-source'; // the single slot the prototype used before the page store
 const PREVIEW_CSS = `
 [data-wge-path] { cursor: grab; }
 .wge-edit-raw { padding: 12px; border: 1px dashed currentColor; font: 12px ui-monospace, monospace; opacity: 0.7; }
@@ -88,18 +89,15 @@ function nodeAt(doc, path) {
 const kindOf = (node) => (node.type === 'document' ? 'container' : components.get(node.type)?.kind);
 const axisOf = (node) => (node.type === 'Grid' || (node.type === 'Stack' && node.props.direction === 'horizontal') ? 'flow' : 'vertical');
 
-// `action` ({ label, run }) adds a button after the message, such as "元に戻す".
-function status(message, tone = '', action = null) {
+// `actions` ({ label, run } or a list of them) adds buttons after the message, such as "元に戻す".
+function status(message, tone = '', actions = []) {
   const el = $('status');
   el.textContent = message;
   el.className = `status ${tone}`;
-  const b = $('status-action');
-  b.hidden = !action;
-  b.textContent = action?.label ?? '';
-  b.onclick = action && (() => {
+  $('status-actions').replaceChildren(...[actions].flat().map((a) => button(a.label, () => {
     status('');
-    action.run();
-  });
+    a.run();
+  })));
 }
 
 function describeError(e) {
@@ -142,14 +140,6 @@ function showDiff(before, after) {
   el.textContent = `前の操作の差分: −${d.removed} 行 +${d.added} 行（${d.first} 行目から）`;
 }
 
-function save() {
-  try {
-    localStorage.setItem(STORAGE_KEY, state.source);
-  } catch {
-    // Storage can be unavailable (private mode); the editor works without it.
-  }
-}
-
 // ------------------------------------------------------------------- state
 
 // Replaces the source. `fromGui` also rewrites the textarea; typing in it does not.
@@ -170,7 +160,7 @@ function setSource(source, { fromGui = true, select } = {}) {
   if (select !== undefined) state.selected = select;
   if (state.selected && !nodeAt(state.doc, state.selected)) state.selected = null;
   if (fromGui) textarea.value = source;
-  save();
+  if (source !== saving.savedSource) scheduleSave();
   render();
 }
 
@@ -662,8 +652,12 @@ function watchPreview(d) {
 document.addEventListener('pointerdown', (e) => {
   if (state.editing && e.target !== overlay) finishEditing();
 }, true);
-// Typing not yet saved would be lost on reload or close.
-window.addEventListener('pagehide', () => finishEditing());
+// Typing not yet saved would be lost on reload or close. The store writes synchronously
+// before its first await, so the save completes while the page is still alive.
+window.addEventListener('pagehide', () => {
+  finishEditing();
+  saveNow();
+});
 
 // ------------------------------------------------------- block toolbar
 // Shown next to the selected block (editor-ux.md §3.1): the handle that drags it, the trail
@@ -1075,6 +1069,219 @@ textarea.addEventListener('keyup', (e) => {
   if (e.key.startsWith('Arrow') || e.key === 'Home' || e.key === 'End' || e.key.startsWith('Page')) selectFromCaret();
 });
 
+// ------------------------------------------- saving, publishing, history
+// There is no save button (editor-ux.md §3.3): every change is saved as the draft about
+// 1.5 s after it, and the header says whether it is saved. Publishing is the one filled
+// button; right after it the status offers to take it back. Versions are kept on publish
+// and as autosave checkpoints, and any of them can be brought back into the draft.
+
+// localStorage can be missing or blocked (private mode, sandboxes); the editor then keeps
+// the page in memory only.
+function webStorage() {
+  try {
+    const s = window.localStorage;
+    s.getItem(LEGACY_KEY);
+    return s;
+  } catch {
+    const map = new Map();
+    return { getItem: (k) => map.get(k) ?? null, setItem: (k, v) => map.set(k, String(v)) };
+  }
+}
+
+const storage = webStorage();
+const store = createPageStore(storage, 'top');
+const saving = {
+  revision: 0, // draft revision the editor's source is based on
+  savedSource: null,
+  savedAt: null,
+  publishedSource: null,
+  conflict: null, // the other tab's draft, until the user chooses
+  timer: null,
+  chain: Promise.resolve(),
+};
+
+const clock = new Intl.DateTimeFormat('ja-JP', { hour: '2-digit', minute: '2-digit' });
+const dateClock = new Intl.DateTimeFormat('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+function showSaveState(kind) {
+  const el = $('save-state');
+  const text = {
+    pending: '未保存の変更があります',
+    saving: '保存中…',
+    saved: saving.savedAt ? `保存しました ${clock.format(saving.savedAt)}` : '',
+    failed: '保存できませんでした。再試行しています',
+    conflict: '別の画面で保存された変更があります',
+  }[kind];
+  el.textContent = text;
+  el.className = `save-state ${kind === 'failed' || kind === 'conflict' ? 'error' : ''}`;
+  const live = state.source === saving.publishedSource;
+  const pub = $('publish');
+  pub.disabled = live;
+  pub.textContent = live ? '公開済み' : '公開';
+  pub.title = live ? '公開中のページと同じ内容です' : 'いまの内容を公開する';
+}
+
+function scheduleSave() {
+  clearTimeout(saving.timer);
+  showSaveState(saving.conflict ? 'conflict' : 'pending');
+  saving.timer = setTimeout(saveNow, 1500);
+}
+
+// Saves now, after any save already running. Resolves when the source is saved or refused.
+function saveNow() {
+  clearTimeout(saving.timer);
+  saving.timer = null;
+  saving.chain = saving.chain.then(saveDraft);
+  return saving.chain;
+}
+
+async function saveDraft() {
+  if (saving.conflict) {
+    showConflict();
+    return;
+  }
+  const source = state.source;
+  if (source === saving.savedSource) return;
+  showSaveState('saving');
+  const res = await store.saveDraft(source, saving.revision);
+  if (res.ok) {
+    Object.assign(saving, { revision: res.revision, savedSource: source, savedAt: res.savedAt });
+    showSaveState(state.source === source ? 'saved' : 'pending');
+    renderHistory();
+  } else if (res.reason === 'conflict') {
+    saving.conflict = res.draft;
+    showConflict();
+  } else {
+    showSaveState('failed');
+    clearTimeout(saving.timer);
+    saving.timer = setTimeout(saveNow, 5000);
+  }
+}
+
+function showConflict() {
+  showSaveState('conflict');
+  status('このページは別の画面でも編集され、そちらが先に保存されました。どちらを残しますか', 'error', [
+    { label: 'そちらを読み込む', run: takeTheirs },
+    { label: 'こちらで上書きする', run: keepMine },
+  ]);
+}
+
+// Loading theirs is an ordinary change here, so "元に戻す" brings this tab's text back.
+function takeTheirs() {
+  const theirs = saving.conflict;
+  Object.assign(saving, { conflict: null, revision: theirs.revision, savedSource: theirs.source, savedAt: theirs.savedAt });
+  replaceSource(theirs.source);
+  showSaveState('saved');
+  status('別の画面で保存された内容を読み込みました', 'ok', { label: '元に戻す', run: undo });
+}
+
+function keepMine() {
+  saving.revision = saving.conflict.revision;
+  saving.conflict = null;
+  saveNow();
+}
+
+// Replaces the whole source as one undoable change (restoring a version, loading theirs, the sample).
+function replaceSource(source) {
+  // Readable typing goes into the history first, so "元に戻す" can bring it back.
+  if (textarea.value !== state.source) flushTyping();
+  if (state.sourceError) {
+    state.sourceError = null;
+    textarea.value = state.source;
+  }
+  commit(source, { fromGui: true, select: null });
+}
+
+async function publish() {
+  if (state.sourceError) {
+    status('ソースにエラーがあります。直してから公開してください', 'error');
+    return;
+  }
+  await saveNow();
+  if (saving.conflict || state.source !== saving.savedSource) {
+    status('保存できていないため、公開できません', 'error');
+    return;
+  }
+  const source = state.source;
+  const res = await store.publish(saving.revision);
+  if (!res.ok) {
+    status('公開できませんでした。もう一度押してください', 'error');
+    return;
+  }
+  saving.publishedSource = source;
+  showSaveState('saved');
+  renderHistory();
+  status(`公開しました（${clock.format(res.version.at)}）`, 'ok', { label: '公開を取り消す', run: () => undoPublish(res.version.id) });
+}
+
+async function undoPublish(versionId) {
+  const res = await store.undoPublish(versionId);
+  if (!res.ok) {
+    status('すでに別の版が公開されているため、取り消せません。履歴から戻してください', 'error');
+    return;
+  }
+  saving.publishedSource = res.published ? await store.getVersion(res.published.id) : null;
+  showSaveState(saving.timer ? 'pending' : 'saved');
+  renderHistory();
+  status(res.published ? '公開を取り消しました。公開中のページは前の内容に戻りました' : '公開を取り消しました。このページは公開されていません', 'ok');
+}
+
+$('publish').addEventListener('click', publish);
+
+async function renderHistory() {
+  const panel = $('history');
+  if (panel.hidden) return;
+  const versions = await store.listVersions();
+  const h = document.createElement('h2');
+  h.textContent = '履歴';
+  const note = document.createElement('p');
+  note.className = 'note';
+  note.textContent = '公開した版と、10 分ごとの自動保存が残ります。戻しても、公開するまで公開中のページは変わりません。';
+  const list = document.createElement('ol');
+  for (const v of versions) {
+    const li = document.createElement('li');
+    const label = `${v.kind === 'publish' ? '公開' : '自動保存'} ${dateClock.format(v.at)}`;
+    const text = document.createElement('span');
+    text.textContent = label;
+    if (v.live) {
+      const live = document.createElement('span');
+      live.className = 'live';
+      live.textContent = '公開中';
+      li.append(text, live);
+    } else {
+      li.append(text);
+    }
+    li.append(button('この版に戻す', () => restoreVersion(v.id, label)));
+    list.append(li);
+  }
+  if (versions.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'empty';
+    empty.textContent = 'まだ版はありません。公開すると、ここに残ります。';
+    panel.replaceChildren(h, empty);
+    return;
+  }
+  panel.replaceChildren(h, note, list);
+}
+
+async function restoreVersion(id, label) {
+  const source = await store.getVersion(id);
+  if (source === null) return;
+  if (source === state.source) {
+    status('いまの内容と同じです');
+    return;
+  }
+  replaceSource(source);
+  status(`「${label}」の版に戻しました`, 'ok', { label: '元に戻す', run: undo });
+}
+
+$('history-toggle').addEventListener('click', () => {
+  const panel = $('history');
+  panel.hidden = !panel.hidden;
+  $('history-toggle').setAttribute('aria-pressed', String(!panel.hidden));
+  renderHistory();
+});
+
 // ---------------------------------------------------------------- toolbar
 
 // The source is hidden unless asked for (U2), and the choice is remembered.
@@ -1108,14 +1315,8 @@ try {
 $('undo').addEventListener('click', undo);
 $('redo').addEventListener('click', redo);
 $('reset').addEventListener('click', () => {
-  // Keep readable typing in the history so "元に戻す" can bring it back.
-  if (textarea.value !== state.source) flushTyping();
-  if (state.sourceError) {
-    state.sourceError = null;
-    textarea.value = state.source;
-  }
-  commit(sample, { fromGui: true, select: null });
-  status('サンプルに戻しました。「元に戻す」で取り消せます', 'ok');
+  replaceSource(sample);
+  status('サンプルに戻しました', 'ok', { label: '元に戻す', run: undo });
 });
 
 function setWidth(mobile) {
@@ -1162,14 +1363,26 @@ function onKey(e) {
 
 // ------------------------------------------------------------------- start
 
-let initial = sample;
-try {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored !== null) {
-    sf.parse(stored);
-    initial = stored;
+const readable = (source) => {
+  try {
+    sf.parse(source);
+    return true;
+  } catch {
+    return false;
   }
-} catch {
-  initial = sample;
+};
+
+// The first time, the page starts from what the earlier prototype kept, else the sample.
+const legacy = storage.getItem(LEGACY_KEY);
+const page = await store.load(legacy !== null && readable(legacy) ? legacy : sample);
+Object.assign(saving, { revision: page.draft.revision, savedAt: page.draft.savedAt });
+saving.publishedSource = page.published ? await store.getVersion(page.published.id) : null;
+if (readable(page.draft.source)) {
+  saving.savedSource = page.draft.source;
+  setSource(page.draft.source);
+} else {
+  // The sample is saved over the unreadable draft on the next autosave.
+  setSource(sample);
+  status('保存されていた下書きを読めなかったため、サンプルを開きました', 'error');
 }
-setSource(initial);
+showSaveState(saving.savedSource === state.source ? 'saved' : 'pending');
