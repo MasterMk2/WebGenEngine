@@ -98,6 +98,14 @@ $page = "<Section>\n  <Heading level=\"1\">喫茶 こもれび</Heading>\n</Sect
 [$status, $body] = $api->handle('GET', '/api/ping', '', []);
 check($status === 200 && $body['wge'] === 1, 'ping answers with the wge marker');
 
+$local = new Api(PageStore::openDatabase('sqlite::memory:'), $site, SourceFormat::fromSchemaFile($packages . '/source/schema.json'), Renderer::fromFiles($packages . '/source'), hosts: ['127.0.0.1:8766', 'localhost:8766']);
+[$status] = $local->handle('GET', '/api/ping', '', ['host' => 'LOCALHOST:8766']);
+check($status === 200, 'a listed Host is accepted, in any case');
+[$status] = $local->handle('POST', '/api/pages/top/load', json_encode(['initialSource' => '']), $json + ['host' => 'evil.example:8766']);
+check($status === 403, 'another Host is refused (DNS rebinding)');
+[$status] = $local->handle('GET', '/api/ping', '', []);
+check($status === 403, 'a request without a Host is refused when hosts are listed');
+
 [$status, $body] = $post('/api/pages/top/draft', ['source' => $page, 'baseRevision' => 0]);
 check($status === 404 && $body['reason'] === 'not-loaded', 'a page must be loaded before saving');
 

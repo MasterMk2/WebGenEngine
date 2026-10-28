@@ -10,6 +10,6 @@ port=${2:-8766}
 mkdir -p server/data
 # A container left over from a previous run would hold the port.
 docker rm -f wge-dev >/dev/null 2>&1 || true
-exec docker run --rm --pull never --name wge-dev -p "127.0.0.1:$port:8080" \
+exec docker run --rm --pull never --name wge-dev -p "127.0.0.1:$port:8080" -e WGE_PORT="$port" \
   -v "$PWD":/app/packages -w /app "$image" \
   php -S 0.0.0.0:8080 -t packages packages/server/router.php

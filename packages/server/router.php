@@ -1,7 +1,7 @@
 <?php
 // Development server for the editor with the PHP save API, using PHP's built-in server:
 //   php -S 0.0.0.0:8080 -t packages packages/server/router.php
-// (run-docker.sh starts it in Docker, published on 127.0.0.1 only). It serves the editor
+// (run-dev.sh starts it in Docker, published on 127.0.0.1 only). It serves the editor
 // and the source packages as static files, the API under /api/, and the published site
 // under /site/. Nothing else is served, and no other PHP file is ever run from a URL.
 //
@@ -61,7 +61,15 @@ if (str_starts_with($path, '/api/')) {
         mkdir($data, 0775, true);
     }
     $db = PageStore::openDatabase('sqlite:' . $data . '/wge.sqlite');
-    $api = new Api($db, $site, SourceFormat::fromSchemaFile($packages . '/source/schema.json'), Renderer::fromFiles($packages . '/source'));
+    // The port the browser uses, which differs from the container's (run-dev.sh sets it).
+    $port = getenv('WGE_PORT') ?: '8766';
+    $api = new Api(
+        $db,
+        $site,
+        SourceFormat::fromSchemaFile($packages . '/source/schema.json'),
+        Renderer::fromFiles($packages . '/source'),
+        hosts: ["127.0.0.1:{$port}", "localhost:{$port}"],
+    );
     $headers = array_change_key_case(function_exists('getallheaders') ? getallheaders() : [], CASE_LOWER);
     [$status, $body] = $api->handle($_SERVER['REQUEST_METHOD'], $path, (string) file_get_contents('php://input'), $headers);
     http_response_code($status);

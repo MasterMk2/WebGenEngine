@@ -26,6 +26,8 @@ final class Api
         private readonly SourceFormat $format,
         private readonly Renderer $renderer,
         private readonly ?\Closure $now = null,
+        /** @var list<string>|null Host headers to accept, such as "127.0.0.1:8766"; null accepts any */
+        private readonly ?array $hosts = null,
     ) {
     }
 
@@ -47,6 +49,11 @@ final class Api
 
     private function route(string $method, string $path, string $body, array $headers): array
     {
+        // A site that points its own name at 127.0.0.1 (DNS rebinding) would be same-origin
+        // with this API and could send the headers checked below; its Host header gives it away.
+        if ($this->hosts !== null && !in_array(strtolower($headers['host'] ?? ''), $this->hosts, true)) {
+            return self::reply(403, ['ok' => false, 'reason' => 'forbidden']);
+        }
         if ($method === 'GET' && $path === '/api/ping') {
             return self::reply(200, ['ok' => true]);
         }
