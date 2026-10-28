@@ -149,6 +149,7 @@ function commit(source, { fromGui = false, select } = {}) {
 }
 
 function setSource(source, { fromGui = true, select } = {}) {
+  if (fromGui) cancelTyping();
   state.source = source;
   state.doc = sf.parse(source);
   state.sourceError = null;
@@ -161,6 +162,8 @@ function setSource(source, { fromGui = true, select } = {}) {
 
 // Runs one edit operation on a fresh parse of the current source.
 function apply(op, select) {
+  // Typing not yet read (within the debounce) goes in first, so the GUI never overwrites it.
+  if (textarea.value !== state.source) flushTyping();
   if (state.sourceError) {
     status('ソースにエラーがあります。直してから操作してください', 'error');
     return false;
@@ -531,27 +534,33 @@ textarea.addEventListener('scroll', () => {
 });
 
 let typingTimer = null;
-let typingBase = null;
-textarea.addEventListener('input', () => {
-  typingBase ??= state.source;
-  renderBackdrop();
+
+function cancelTyping() {
   clearTimeout(typingTimer);
-  typingTimer = setTimeout(() => {
-    const text = textarea.value;
-    try {
-      sf.parse(text);
-    } catch (e) {
-      state.sourceError = e;
-      frameWrap.classList.add('stale');
-      status(`ソースのエラー（${describeError(e)}）。プレビューは最後に読めた内容のままです`, 'error');
-      return;
-    }
-    const base = typingBase;
-    typingBase = null;
-    state.source = base;
-    commit(text);
-    status('ソースの変更をプレビューに反映しました', 'ok');
-  }, 300);
+  typingTimer = null;
+}
+
+// Reads the textarea into the state, or records the error and keeps the last good tree.
+function flushTyping() {
+  cancelTyping();
+  const text = textarea.value;
+  if (text === state.source) return;
+  try {
+    sf.parse(text);
+  } catch (e) {
+    state.sourceError = e;
+    frameWrap.classList.add('stale');
+    status(`ソースのエラー（${describeError(e)}）。プレビューは最後に読めた内容のままです`, 'error');
+    return;
+  }
+  commit(text);
+  status('ソースの変更をプレビューに反映しました', 'ok');
+}
+
+textarea.addEventListener('input', () => {
+  renderBackdrop();
+  cancelTyping();
+  typingTimer = setTimeout(flushTyping, 300);
 });
 
 // Caret in the source selects the innermost block that contains it.
@@ -608,6 +617,8 @@ for (const name of Object.keys(TEMPLATES)) {
 $('undo').addEventListener('click', undo);
 $('redo').addEventListener('click', redo);
 $('reset').addEventListener('click', () => {
+  // Keep readable typing in the history so "元に戻す" can bring it back.
+  if (textarea.value !== state.source) flushTyping();
   if (state.sourceError) {
     state.sourceError = null;
     textarea.value = state.source;
