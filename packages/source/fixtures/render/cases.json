@@ -1,0 +1,69 @@
+[
+  {
+    "name": "typical page section",
+    "source": "<!-- メモ -->\n<Section padding=\"xl\" background=\"subtle\" width=\"narrow\">\n  <Stack align=\"center\" gap=\"md\">\n    <Heading level=\"1\" align=\"center\">ようこそ</Heading>\n    <Text size=\"lg\">小さなお店の<Strong>公式サイト</Strong>です。<Link href=\"/about\">詳しく</Link><Br/>次の行</Text>\n    <Stack direction=\"horizontal\" gap=\"sm\">\n      <Button href=\"/contact\">お問い合わせ</Button>\n      <Button href=\"tel:0312345678\" variant=\"secondary\">電話</Button>\n    </Stack>\n  </Stack>\n</Section>\n",
+    "html": "<section class=\"wge-section wge-padding-xl wge-bg-subtle wge-width-narrow\">\n  <div class=\"wge-stack wge-align-center wge-gap-md\">\n    <h1 class=\"wge-heading wge-text-align-center\">ようこそ</h1>\n    <p class=\"wge-text wge-size-lg\">小さなお店の<strong>公式サイト</strong>です。<a href=\"/about\">詳しく</a><br>次の行</p>\n    <div class=\"wge-stack wge-direction-horizontal wge-gap-sm\">\n      <a class=\"wge-button\" href=\"/contact\">お問い合わせ</a>\n      <a class=\"wge-button wge-variant-secondary\" href=\"tel:0312345678\">電話</a>\n    </div>\n  </div>\n</section>\n"
+  },
+  {
+    "name": "grid, image ratio, raw HTML and an empty stack",
+    "source": "<Grid columns=\"3\" gap=\"2xl\">\n  <Image src=\"/a.jpg\" alt=\"店内\" ratio=\"16:9\" />\n  <Html><iframe src=\"https://example.com/map\"></iframe>\n<p>2 行目</p></Html>\n  <Stack />\n</Grid>\n",
+    "html": "<div class=\"wge-grid wge-columns-3 wge-gap-2xl\">\n  <img class=\"wge-image wge-ratio-16-9\" src=\"/a.jpg\" alt=\"店内\" loading=\"lazy\" decoding=\"async\">\n  <iframe src=\"https://example.com/map\"></iframe>\n<p>2 行目</p>\n  <div class=\"wge-stack\"></div>\n</div>\n"
+  },
+  {
+    "name": "class order follows the schema, not the source",
+    "source": "<Stack wrap=\"false\" gap=\"lg\" justify=\"between\" direction=\"horizontal\" />",
+    "html": "<div class=\"wge-stack wge-direction-horizontal wge-justify-between wge-gap-lg wge-wrap-false\"></div>\n"
+  },
+  {
+    "name": "special characters are escaped",
+    "source": "<Text>A &amp; B &lt;x&gt; \"q\" 's'</Text>\n<Image src=\"/a?b=1&amp;c=2\" alt=\"&quot;引用&quot; &lt;3\" />\n",
+    "html": "<p class=\"wge-text\">A &amp; B &lt;x&gt; \"q\" 's'</p>\n<img class=\"wge-image\" src=\"/a?b=1&amp;c=2\" alt=\"&quot;引用&quot; &lt;3\" loading=\"lazy\" decoding=\"async\">\n"
+  },
+  {
+    "name": "comments are not published",
+    "source": "<!-- a -->\n<Stack>\n  <!-- b -->\n</Stack>\n<!-- c -->\n",
+    "html": "<div class=\"wge-stack\"></div>\n"
+  },
+  {
+    "name": "heading levels choose the tag",
+    "source": "<Heading level=\"2\">二</Heading><Heading level=\"6\">六</Heading><Heading level=\"3\" />",
+    "html": "<h2 class=\"wge-heading\">二</h2>\n<h6 class=\"wge-heading\">六</h6>\n<h3 class=\"wge-heading\"></h3>\n"
+  },
+  {
+    "name": "inline nesting",
+    "source": "<Button href=\"/x\"><Strong>強</Strong>と<Em>弱</Em></Button>\n<Text><Link href=\"https://example.com/\"><Em>リンク</Em></Link></Text>",
+    "html": "<a class=\"wge-button\" href=\"/x\"><strong>強</strong>と<em>弱</em></a>\n<p class=\"wge-text\"><a href=\"https://example.com/\"><em>リンク</em></a></p>\n"
+  },
+  {
+    "name": "empty document",
+    "source": "",
+    "html": ""
+  },
+  {
+    "name": "whole page",
+    "source": "<Text>本文</Text>\n",
+    "page": {"title": "店 & <カフェ>", "lang": "en", "stylesheetHref": "/assets/site.css?v=1&x=\"2\""},
+    "pageHtml": "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>店 &amp; &lt;カフェ&gt;</title>\n<link rel=\"stylesheet\" href=\"/assets/site.css?v=1&amp;x=&quot;2&quot;\">\n</head>\n<body>\n<main class=\"wge-page\">\n  <p class=\"wge-text\">本文</p>\n</main>\n</body>\n</html>\n"
+  },
+  {
+    "name": "page with default options",
+    "source": "",
+    "page": {"title": "空"},
+    "pageHtml": "<!doctype html>\n<html lang=\"ja\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>空</title>\n<link rel=\"stylesheet\" href=\"style.css\">\n</head>\n<body>\n<main class=\"wge-page\">\n</main>\n</body>\n</html>\n"
+  },
+  {"name": "invalid page language", "source": "", "page": {"title": "x", "lang": "ja\"><script>"}, "renderError": {"code": "E_LANG", "key": "lang"}},
+  {"name": "default stylesheet", "stylesheet": "default.css"},
+  {"name": "every class the schema can produce has a rule", "classCoverage": true},
+  {"name": "theme: missing token", "themePatch": {"space": {"md": null}}, "renderError": {"code": "E_THEME", "key": "space.md"}},
+  {"name": "theme: unknown color", "themePatch": {"color": {"accent": "#ff0000"}}, "renderError": {"code": "E_THEME", "key": "color.accent"}},
+  {"name": "theme: length with a space", "themePatch": {"space": {"lg": "2 rem"}}, "renderError": {"code": "E_THEME", "key": "space.lg"}},
+  {"name": "theme: length with a trailing line break", "themePatch": {"width": {"wide": "80rem\n"}}, "renderError": {"code": "E_THEME", "key": "width.wide"}},
+  {"name": "theme: calc is not allowed", "themePatch": {"space": {"xs": "calc(1px + 1px)"}}, "renderError": {"code": "E_THEME", "key": "space.xs"}},
+  {"name": "theme: named color", "themePatch": {"color": {"primary": "red"}}, "renderError": {"code": "E_THEME", "key": "color.primary"}},
+  {"name": "theme: CSS injection through the font", "themePatch": {"font": {"body": "x; } body { display: none"}}, "renderError": {"code": "E_THEME", "key": "font.body"}},
+  {"name": "theme: unitless breakpoint", "themePatch": {"breakpoint": "0"}, "renderError": {"code": "E_THEME", "key": "breakpoint"}},
+  {"name": "theme: number instead of string", "themePatch": {"radius": 4}, "renderError": {"code": "E_THEME", "key": "radius"}},
+  {"name": "theme: unknown top-level key", "themePatch": {"shadow": "none"}, "renderError": {"code": "E_THEME", "key": "shadow"}},
+  {"name": "theme: empty array counts as an empty object (PHP cannot tell them apart)", "themePatch": {"space": []}, "renderError": {"code": "E_THEME", "key": "space.none"}},
+  {"name": "theme: first problem wins in a fixed order", "themePatch": {"color": {"text": "bad"}, "space": {"sm": "bad"}}, "renderError": {"code": "E_THEME", "key": "space.sm"}}
+]

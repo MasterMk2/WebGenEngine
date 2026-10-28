@@ -1,0 +1,17 @@
+{
+  "space": { "none": "0", "xs": "0.25rem", "sm": "0.5rem", "md": "1rem", "lg": "2rem", "xl": "3rem", "2xl": "4rem" },
+  "fontSize": { "sm": "0.875rem", "md": "1rem", "lg": "1.25rem" },
+  "width": { "narrow": "40rem", "normal": "64rem", "wide": "80rem" },
+  "radius": "0.5rem",
+  "breakpoint": "40rem",
+  "color": {
+    "text": "#1f2328",
+    "background": "#ffffff",
+    "subtle": "#f3f4f6",
+    "primary": "#0b57d0",
+    "on-primary": "#ffffff",
+    "inverse": "#1f2328",
+    "on-inverse": "#ffffff"
+  },
+  "font": { "body": "system-ui, -apple-system, \"Hiragino Sans\", \"Noto Sans JP\", \"Yu Gothic UI\", sans-serif" }
+}

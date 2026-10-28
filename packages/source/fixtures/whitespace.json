@@ -1,0 +1,76 @@
+[
+  {
+    "name": "Japanese wrapped across lines joins without a space",
+    "source": "<Text>\n  日本語の文は\n  ここで折り返しても続けて読まれる。\n</Text>\n",
+    "canonical": "<Text>日本語の文はここで折り返しても続けて読まれる。</Text>\n",
+    "tree": {"type": "document", "children": [
+      {"type": "Text", "props": {}, "children": [{"type": "text", "value": "日本語の文はここで折り返しても続けて読まれる。"}]}
+    ]}
+  },
+  {
+    "name": "English wrapped across lines joins with one space",
+    "source": "<Text>\n  Hello\n  world\n</Text>",
+    "tree": {"type": "document", "children": [
+      {"type": "Text", "props": {}, "children": [{"type": "text", "value": "Hello world"}]}
+    ]}
+  },
+  {
+    "name": "a line break next to one wide character disappears",
+    "source": "<Text>WebGenEngine\nは便利。\nCMS\nです</Text>",
+    "tree": {"type": "document", "children": [
+      {"type": "Text", "props": {}, "children": [{"type": "text", "value": "WebGenEngineは便利。CMSです"}]}
+    ]}
+  },
+  {
+    "name": "full-width punctuation and surrogate-pair kanji count as wide",
+    "source": "<Text>「引用」\n（注）\n𠮷\n野家</Text>",
+    "tree": {"type": "document", "children": [
+      {"type": "Text", "props": {}, "children": [{"type": "text", "value": "「引用」（注）𠮷野家"}]}
+    ]}
+  },
+  {
+    "name": "runs without a line break collapse to one space, even between wide characters",
+    "source": "<Text>a   b\t c 日本  語</Text>",
+    "tree": {"type": "document", "children": [
+      {"type": "Text", "props": {}, "children": [{"type": "text", "value": "a b c 日本 語"}]}
+    ]}
+  },
+  {
+    "name": "edges of text components are trimmed, inline components are not",
+    "source": "<Text>  前<Strong> 強調 </Strong>\n  後  </Text>",
+    "canonical": "<Text>前<Strong> 強調 </Strong>後</Text>\n",
+    "tree": {"type": "document", "children": [
+      {"type": "Text", "props": {}, "children": [
+        {"type": "text", "value": "前"},
+        {"type": "Strong", "props": {}, "children": [{"type": "text", "value": " 強調 "}]},
+        {"type": "text", "value": "後"}
+      ]}
+    ]}
+  },
+  {
+    "name": "whitespace between inline components stays as one space",
+    "source": "<Text><Strong>A</Strong>\n   <Em>B</Em></Text>",
+    "tree": {"type": "document", "children": [
+      {"type": "Text", "props": {}, "children": [
+        {"type": "Strong", "props": {}, "children": [{"type": "text", "value": "A"}]},
+        {"type": "text", "value": " "},
+        {"type": "Em", "props": {}, "children": [{"type": "text", "value": "B"}]}
+      ]}
+    ]}
+  },
+  {
+    "name": "whitespace written as character references is treated like literal whitespace",
+    "source": "<Text>a&#32;&#32;b&#10;c&#x9;</Text>",
+    "tree": {"type": "document", "children": [
+      {"type": "Text", "props": {}, "children": [{"type": "text", "value": "a b c"}]}
+    ]}
+  },
+  {
+    "name": "text component holding only whitespace becomes empty",
+    "source": "<Heading level=\"2\">   \n  </Heading>",
+    "canonical": "<Heading level=\"2\" />\n",
+    "tree": {"type": "document", "children": [
+      {"type": "Heading", "props": {"level": "2"}, "children": []}
+    ]}
+  }
+]

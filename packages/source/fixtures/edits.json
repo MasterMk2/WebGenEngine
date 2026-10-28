@@ -1,0 +1,183 @@
+[
+  {
+    "name": "changing one attribute rewrites only that start tag",
+    "source": "<Section padding=\"lg\">\n    <Stack  align=\"center\"   gap=\"md\">\n        <Heading level=\"1\">ようこそ</Heading>\n    </Stack>\n<!-- 下書き -->\n<Text>\n  本文\n</Text>\n</Section>\n",
+    "edits": [{"op": "setProp", "path": [0, 0], "name": "gap", "value": "lg"}],
+    "output": "<Section padding=\"lg\">\n    <Stack align=\"center\" gap=\"lg\">\n        <Heading level=\"1\">ようこそ</Heading>\n    </Stack>\n<!-- 下書き -->\n<Text>\n  本文\n</Text>\n</Section>\n"
+  },
+  {
+    "name": "removing an optional attribute",
+    "source": "<Stack gap=\"md\" wrap=\"true\">\n  <Text>a</Text>\n</Stack>\n",
+    "edits": [{"op": "setProp", "path": [0], "name": "wrap", "value": null}],
+    "output": "<Stack gap=\"md\">\n  <Text>a</Text>\n</Stack>\n"
+  },
+  {
+    "name": "inserted child copies the indentation of its sibling",
+    "source": "<Stack>\n        <Heading level=\"1\">見出し</Heading>\n</Stack>\n",
+    "edits": [{"op": "insert", "parent": [0], "index": 1, "node": {"type": "Text", "props": {"size": "lg"}, "children": [{"type": "text", "value": "追加"}]}}],
+    "output": "<Stack>\n        <Heading level=\"1\">見出し</Heading>\n        <Text size=\"lg\">追加</Text>\n</Stack>\n"
+  },
+  {
+    "name": "removing the first top-level block leaves no blank line",
+    "source": "<Text>a</Text>\n<Text>b</Text>\n",
+    "edits": [{"op": "remove", "path": [0]}],
+    "output": "<Text>b</Text>\n"
+  },
+  {
+    "name": "inserting before the first top-level block",
+    "source": "<Text>a</Text>\n",
+    "edits": [{"op": "insert", "parent": [], "index": 0, "node": {"type": "Text", "props": {}, "children": [{"type": "text", "value": "b"}]}}],
+    "output": "<Text>b</Text>\n<Text>a</Text>\n"
+  },
+  {
+    "name": "inserting into an empty document",
+    "source": "",
+    "edits": [{"op": "insert", "parent": [], "index": 0, "node": {"type": "Text", "props": {}, "children": [{"type": "text", "value": "x"}]}}],
+    "output": "<Text>x</Text>\n"
+  },
+  {
+    "name": "moving the last child to the front",
+    "source": "<Stack>\n  <Text>a</Text>\n  <Text>b</Text>\n  <Text>c</Text>\n</Stack>\n",
+    "edits": [{"op": "move", "from": [0, 2], "parent": [0], "index": 0}],
+    "output": "<Stack>\n  <Text>c</Text>\n  <Text>a</Text>\n  <Text>b</Text>\n</Stack>\n"
+  },
+  {
+    "name": "moving a block into another container keeps its own text",
+    "source": "<Stack>\n  <Text   size=\"lg\">a</Text>\n</Stack>\n<Section>\n  <Image src=\"/x.png\" alt=\"x\" />\n</Section>\n",
+    "edits": [{"op": "move", "from": [0, 0], "parent": [1], "index": 1}],
+    "output": "<Stack></Stack>\n<Section>\n  <Image src=\"/x.png\" alt=\"x\" />\n  <Text   size=\"lg\">a</Text>\n</Section>\n"
+  },
+  {
+    "name": "replacing text keeps a non-canonical start tag",
+    "source": "<Heading   level=\"1\">ようこそ</Heading>\n",
+    "edits": [{"op": "setInline", "path": [0], "children": [{"type": "text", "value": "こんにちは"}]}],
+    "output": "<Heading   level=\"1\">こんにちは</Heading>\n"
+  },
+  {
+    "name": "inserting into a self-closed container opens it",
+    "source": "<Section>\n  <Stack gap=\"md\" />\n</Section>\n",
+    "edits": [{"op": "insert", "parent": [0, 0], "index": 0, "node": {"type": "Text", "props": {}, "children": [{"type": "text", "value": "x"}]}}],
+    "output": "<Section>\n  <Stack gap=\"md\">\n    <Text>x</Text>\n  </Stack>\n</Section>\n"
+  },
+  {
+    "name": "inserting into an empty open container",
+    "source": "<Section>\n  <Stack></Stack>\n</Section>\n",
+    "edits": [{"op": "insert", "parent": [0, 0], "index": 0, "node": {"type": "Text", "props": {}, "children": [{"type": "text", "value": "x"}]}}],
+    "output": "<Section>\n  <Stack>\n    <Text>x</Text>\n  </Stack>\n</Section>\n"
+  },
+  {
+    "name": "CRLF documents get CRLF in new parts",
+    "source": "<Stack>\r\n  <Text>a</Text>\r\n</Stack>\r\n",
+    "edits": [{"op": "insert", "parent": [0], "index": 1, "node": {"type": "Stack", "props": {"gap": "sm"}, "children": [{"type": "Text", "props": {}, "children": [{"type": "text", "value": "b"}]}]}}],
+    "output": "<Stack>\r\n  <Text>a</Text>\r\n  <Stack gap=\"sm\">\r\n    <Text>b</Text>\r\n  </Stack>\r\n</Stack>\r\n"
+  },
+  {
+    "name": "new comment and raw HTML are written canonically",
+    "source": "<Stack>\n  <Text>a</Text>\n</Stack>\n",
+    "edits": [
+      {"op": "insert", "parent": [0], "index": 0, "node": {"type": "comment", "value": " 地図 "}},
+      {"op": "insert", "parent": [0], "index": 1, "node": {"type": "Html", "props": {}, "raw": "<iframe src=\"https://example.com/map\"></iframe>"}}
+    ],
+    "output": "<Stack>\n  <!-- 地図 -->\n  <Html><iframe src=\"https://example.com/map\"></iframe></Html>\n  <Text>a</Text>\n</Stack>\n"
+  },
+  {
+    "name": "replacing raw HTML keeps the tags around it",
+    "source": "<Html>\n<b>old</b>\n</Html>\n",
+    "edits": [{"op": "setRaw", "path": [0], "raw": "<b>new</b>"}],
+    "output": "<Html><b>new</b></Html>\n"
+  },
+  {
+    "name": "editing one sibling leaves a hand-formatted sibling untouched",
+    "source": "<Stack>\n  <Text   size=\"lg\">\n    大きな文字\n  </Text>\n  <Text>b</Text>\n</Stack>\n",
+    "edits": [{"op": "setInline", "path": [0, 1], "children": [{"type": "text", "value": "B"}, {"type": "Strong", "props": {}, "children": [{"type": "text", "value": "!"}]}]}],
+    "output": "<Stack>\n  <Text   size=\"lg\">\n    大きな文字\n  </Text>\n  <Text>B<Strong>!</Strong></Text>\n</Stack>\n"
+  },
+  {
+    "name": "changing a link inside text rewrites the text content",
+    "source": "<Text  size=\"lg\">\n  詳しくは<Link href=\"/old\">こちら</Link>\n</Text>\n",
+    "edits": [{"op": "setProp", "path": [0, 1], "name": "href", "value": "/new"}],
+    "output": "<Text  size=\"lg\">詳しくは<Link href=\"/new\">こちら</Link></Text>\n"
+  },
+  {
+    "name": "replacing the content of emphasis inside text",
+    "source": "<Stack>\n  <Text>前<Strong>古い</Strong>後</Text>\n</Stack>\n",
+    "edits": [{"op": "setInline", "path": [0, 0, 1], "children": [{"type": "text", "value": "新しい"}]}],
+    "output": "<Stack>\n  <Text>前<Strong>新しい</Strong>後</Text>\n</Stack>\n"
+  },
+  {
+    "name": "edit values with a lone CR are rejected",
+    "source": "<Image src=\"/a.png\" alt=\"a\" />\n<Html></Html>\n",
+    "edits": [
+      {"op": "setProp", "path": [0], "name": "alt", "value": "a\rb", "expectError": "E_LONE_CR"},
+      {"op": "setRaw", "path": [1], "raw": "a\rb", "expectError": "E_LONE_CR"},
+      {"op": "insert", "parent": [], "index": 0, "node": {"type": "comment", "value": "a\rb"}, "expectError": "E_LONE_CR"},
+      {"op": "insert", "parent": [], "index": 0, "node": {"type": "comment", "value": "ends with -"}, "expectError": "E_INVALID_VALUE"}
+    ],
+    "output": "<Image src=\"/a.png\" alt=\"a\" />\n<Html></Html>\n"
+  },
+  {
+    "name": "CRLF inside an attribute value survives an edit",
+    "source": "<Image src=\"/a.png\" alt=\"a\" />\n",
+    "edits": [{"op": "setProp", "path": [0], "name": "alt", "value": "1行目\r\n2行目"}],
+    "output": "<Image src=\"/a.png\" alt=\"1行目\r\n2行目\" />\n"
+  },
+  {
+    "name": "text given by the GUI follows the whitespace rules",
+    "source": "<Text>x</Text>\n",
+    "edits": [{"op": "setInline", "path": [0], "children": [
+      {"type": "text", "value": "  日本\n"},
+      {"type": "text", "value": "語  の   説明 "},
+      {"type": "text", "value": ""}
+    ]}],
+    "output": "<Text>日本語 の 説明</Text>\n",
+    "canonicalAfter": "<Text>日本語 の 説明</Text>\n"
+  },
+  {
+    "name": "special characters from the GUI are escaped",
+    "source": "<Text>x</Text>\n",
+    "edits": [
+      {"op": "setInline", "path": [0], "children": [{"type": "text", "value": "<script>&"}]},
+      {"op": "insert", "parent": [], "index": 1, "node": {"type": "Image", "props": {"src": "/a?b=1&c=2", "alt": "\"q\""}}}
+    ],
+    "output": "<Text>&lt;script&gt;&amp;</Text>\n<Image src=\"/a?b=1&amp;c=2\" alt=\"&quot;q&quot;\" />\n"
+  },
+  {
+    "name": "removing the only child of a container",
+    "source": "<Stack>\n  <Text>a</Text>\n</Stack>\n",
+    "edits": [{"op": "remove", "path": [0, 0]}],
+    "output": "<Stack></Stack>\n"
+  },
+  {
+    "name": "rejected edits change nothing",
+    "source": "<Button href=\"/\">x</Button>\n<Stack gap=\"md\">\n  <Heading level=\"1\">見出し</Heading>\n  <Html></Html>\n</Stack>\n",
+    "edits": [
+      {"op": "setProp", "path": [1], "name": "gap", "value": "13px", "expectError": "E_INVALID_VALUE"},
+      {"op": "setProp", "path": [1], "name": "color", "value": "red", "expectError": "E_UNKNOWN_ATTRIBUTE"},
+      {"op": "setProp", "path": [1, 0], "name": "level", "value": null, "expectError": "E_MISSING_ATTRIBUTE"},
+      {"op": "setProp", "path": [0], "name": "href", "value": "javascript:void(0)", "expectError": "E_UNSAFE_URL"},
+      {"op": "insert", "parent": [1], "index": 0, "node": {"type": "Strong", "props": {}, "children": []}, "expectError": "E_NOT_ALLOWED_HERE"},
+      {"op": "insert", "parent": [1], "index": 0, "node": {"type": "text", "value": "x"}, "expectError": "E_TEXT_IN_BLOCK"},
+      {"op": "insert", "parent": [1, 0], "index": 0, "node": {"type": "Text", "props": {}, "children": []}, "expectError": "E_NOT_ALLOWED_HERE"},
+      {"op": "insert", "parent": [1], "index": 9, "node": {"type": "Text", "props": {}, "children": []}, "expectError": "E_BAD_PATH"},
+      {"op": "insert", "parent": [1], "index": 0, "node": {"type": "Grid", "props": {}, "children": []}, "expectError": "E_MISSING_ATTRIBUTE"},
+      {"op": "setInline", "path": [0], "children": [{"type": "Link", "props": {"href": "/a"}, "children": []}], "expectError": "E_NOT_ALLOWED_HERE"},
+      {"op": "setInline", "path": [1], "children": [], "expectError": "E_NOT_ALLOWED_HERE"},
+      {"op": "setRaw", "path": [1, 1], "raw": "a</Html>b", "expectError": "E_INVALID_VALUE"},
+      {"op": "remove", "path": [5], "expectError": "E_BAD_PATH"},
+      {"op": "remove", "path": [], "expectError": "E_BAD_PATH"},
+      {"op": "move", "from": [1], "parent": [1], "index": 0, "expectError": "E_BAD_PATH"},
+      {"op": "move", "from": [1, 0], "parent": [0], "index": 0, "expectError": "E_NOT_ALLOWED_HERE"}
+    ],
+    "output": "<Button href=\"/\">x</Button>\n<Stack gap=\"md\">\n  <Heading level=\"1\">見出し</Heading>\n  <Html></Html>\n</Stack>\n"
+  },
+  {
+    "name": "several edits each stay on their own line",
+    "source": "<Section padding=\"lg\">\n  <Stack gap=\"md\">\n    <Heading level=\"1\">A</Heading>\n    <Text>B</Text>\n    <Text>C</Text>\n  </Stack>\n</Section>\n",
+    "edits": [
+      {"op": "setProp", "path": [0], "name": "background", "value": "subtle"},
+      {"op": "setInline", "path": [0, 0, 1], "children": [{"type": "text", "value": "B2"}]},
+      {"op": "remove", "path": [0, 0, 2]}
+    ],
+    "output": "<Section padding=\"lg\" background=\"subtle\">\n  <Stack gap=\"md\">\n    <Heading level=\"1\">A</Heading>\n    <Text>B2</Text>\n  </Stack>\n</Section>\n"
+  }
+]

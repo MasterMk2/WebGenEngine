@@ -1,0 +1,121 @@
+[
+  {
+    "name": "spec example is already canonical",
+    "source": "<Section padding=\"lg\">\n  <Stack align=\"center\" gap=\"md\">\n    <Heading level=\"1\">ようこそ</Heading>\n    <Text>小さなお店の<Strong>公式サイト</Strong>です。</Text>\n    <Button href=\"/contact\">お問い合わせ</Button>\n  </Stack>\n</Section>\n",
+    "canonical": "<Section padding=\"lg\">\n  <Stack align=\"center\" gap=\"md\">\n    <Heading level=\"1\">ようこそ</Heading>\n    <Text>小さなお店の<Strong>公式サイト</Strong>です。</Text>\n    <Button href=\"/contact\">お問い合わせ</Button>\n  </Stack>\n</Section>\n",
+    "tree": {"type": "document", "children": [
+      {"type": "Section", "props": {"padding": "lg"}, "children": [
+        {"type": "Stack", "props": {"align": "center", "gap": "md"}, "children": [
+          {"type": "Heading", "props": {"level": "1"}, "children": [{"type": "text", "value": "ようこそ"}]},
+          {"type": "Text", "props": {}, "children": [
+            {"type": "text", "value": "小さなお店の"},
+            {"type": "Strong", "props": {}, "children": [{"type": "text", "value": "公式サイト"}]},
+            {"type": "text", "value": "です。"}
+          ]},
+          {"type": "Button", "props": {"href": "/contact"}, "children": [{"type": "text", "value": "お問い合わせ"}]}
+        ]}
+      ]}
+    ]}
+  },
+  {
+    "name": "non-canonical layout is normalised only in canonical output",
+    "source": "<Stack\n    gap=\"md\"   align=\"center\">\n<Heading level=\"2\"\n>見出し</Heading  >\n      <Text size=\"sm\">\n        説明\n      </Text></Stack>",
+    "canonical": "<Stack align=\"center\" gap=\"md\">\n  <Heading level=\"2\">見出し</Heading>\n  <Text size=\"sm\">説明</Text>\n</Stack>\n",
+    "tree": {"type": "document", "children": [
+      {"type": "Stack", "props": {"align": "center", "gap": "md"}, "children": [
+        {"type": "Heading", "props": {"level": "2"}, "children": [{"type": "text", "value": "見出し"}]},
+        {"type": "Text", "props": {"size": "sm"}, "children": [{"type": "text", "value": "説明"}]}
+      ]}
+    ]}
+  },
+  {
+    "name": "void, raw, comment and empty containers",
+    "source": "<!-- トップ -->\n<Grid columns=\"3\" gap=\"sm\">\n  <Image src=\"/img/a.jpg\" alt=\"\" ratio=\"4:3\"/>\n  <Html><iframe src=\"https://example.com/map\"></iframe>\n</Html>\n  <Stack></Stack>\n  <Stack gap=\"none\"/>\n</Grid>\n",
+    "canonical": "<!-- トップ -->\n<Grid columns=\"3\" gap=\"sm\">\n  <Image src=\"/img/a.jpg\" alt=\"\" ratio=\"4:3\" />\n  <Html><iframe src=\"https://example.com/map\"></iframe>\n</Html>\n  <Stack />\n  <Stack gap=\"none\" />\n</Grid>\n",
+    "tree": {"type": "document", "children": [
+      {"type": "comment", "value": " トップ "},
+      {"type": "Grid", "props": {"columns": "3", "gap": "sm"}, "children": [
+        {"type": "Image", "props": {"src": "/img/a.jpg", "alt": "", "ratio": "4:3"}},
+        {"type": "Html", "props": {}, "raw": "<iframe src=\"https://example.com/map\"></iframe>\n"},
+        {"type": "Stack", "props": {}, "children": []},
+        {"type": "Stack", "props": {"gap": "none"}, "children": []}
+      ]}
+    ]}
+  },
+  {
+    "name": "entities are decoded and re-escaped canonically",
+    "source": "<Text>A &amp; B &lt;tag&gt; &quot;q&quot; &apos;s&apos; &#x1F363; &#26085;</Text>\n<Image src=\"/s?a=1&amp;b=2\" alt=\"&quot;引用&quot; &lt;3\" />\n",
+    "canonical": "<Text>A &amp; B &lt;tag&gt; \"q\" 's' 🍣 日</Text>\n<Image src=\"/s?a=1&amp;b=2\" alt=\"&quot;引用&quot; &lt;3\" />\n",
+    "tree": {"type": "document", "children": [
+      {"type": "Text", "props": {}, "children": [{"type": "text", "value": "A & B <tag> \"q\" 's' 🍣 日"}]},
+      {"type": "Image", "props": {"src": "/s?a=1&b=2", "alt": "\"引用\" <3"}}
+    ]}
+  },
+  {
+    "name": "BOM and CRLF are accepted",
+    "source": "﻿<Stack>\r\n  <Text>行1</Text>\r\n</Stack>\r\n",
+    "canonical": "<Stack>\n  <Text>行1</Text>\n</Stack>\n",
+    "tree": {"type": "document", "children": [
+      {"type": "Stack", "props": {}, "children": [{"type": "Text", "props": {}, "children": [{"type": "text", "value": "行1"}]}]}
+    ]}
+  },
+  {
+    "name": "empty document",
+    "source": "",
+    "canonical": "",
+    "tree": {"type": "document", "children": []}
+  },
+  {
+    "name": "whitespace-only document",
+    "source": "\n\n  \n",
+    "canonical": "",
+    "tree": {"type": "document", "children": []}
+  },
+  {
+    "name": "surrogate pairs in text",
+    "source": "<Heading level=\"3\">𠮷野家で🍣</Heading>",
+    "canonical": "<Heading level=\"3\">𠮷野家で🍣</Heading>\n",
+    "tree": {"type": "document", "children": [
+      {"type": "Heading", "props": {"level": "3"}, "children": [{"type": "text", "value": "𠮷野家で🍣"}]}
+    ]}
+  },
+  {
+    "name": "links, emphasis and line breaks inside text",
+    "source": "<Text align=\"center\">詳しくは<Link href=\"https://example.com/about\"><Em>こちら</Em></Link><Br/>電話: <Link href=\"tel:0312345678\">03-1234-5678</Link></Text>\n",
+    "canonical": "<Text align=\"center\">詳しくは<Link href=\"https://example.com/about\"><Em>こちら</Em></Link><Br />電話: <Link href=\"tel:0312345678\">03-1234-5678</Link></Text>\n",
+    "tree": {"type": "document", "children": [
+      {"type": "Text", "props": {"align": "center"}, "children": [
+        {"type": "text", "value": "詳しくは"},
+        {"type": "Link", "props": {"href": "https://example.com/about"}, "children": [
+          {"type": "Em", "props": {}, "children": [{"type": "text", "value": "こちら"}]}
+        ]},
+        {"type": "Br", "props": {}},
+        {"type": "text", "value": "電話: "},
+        {"type": "Link", "props": {"href": "tel:0312345678"}, "children": [{"type": "text", "value": "03-1234-5678"}]}
+      ]}
+    ]}
+  },
+  {
+    "name": "relative and fragment URLs are allowed",
+    "source": "<Button href=\"#top\">上へ</Button>\n<Button href=\"../list?page=2\" variant=\"secondary\">一覧</Button>\n<Button href=\"MAILTO:info@example.com\">メール</Button>\n",
+    "tree": {"type": "document", "children": [
+      {"type": "Button", "props": {"href": "#top"}, "children": [{"type": "text", "value": "上へ"}]},
+      {"type": "Button", "props": {"href": "../list?page=2", "variant": "secondary"}, "children": [{"type": "text", "value": "一覧"}]},
+      {"type": "Button", "props": {"href": "MAILTO:info@example.com"}, "children": [{"type": "text", "value": "メール"}]}
+    ]}
+  },
+  {
+    "name": "blank lines between top-level blocks are kept when untouched",
+    "source": "<Text>a</Text>\n\n\n<Text>b</Text>\n",
+    "canonical": "<Text>a</Text>\n<Text>b</Text>\n"
+  },
+  {
+    "name": "self-closed text component",
+    "source": "<Heading level=\"2\" />\n<Heading level=\"2\"></Heading>\n",
+    "canonical": "<Heading level=\"2\" />\n<Heading level=\"2\" />\n",
+    "tree": {"type": "document", "children": [
+      {"type": "Heading", "props": {"level": "2"}, "children": []},
+      {"type": "Heading", "props": {"level": "2"}, "children": []}
+    ]}
+  }
+]

@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "tokens": {
+    "space": ["none", "xs", "sm", "md", "lg", "xl", "2xl"]
+  },
+  "urlSchemes": ["http", "https", "mailto", "tel"],
+  "theme": {
+    "color": ["text", "background", "subtle", "primary", "on-primary", "inverse", "on-inverse"],
+    "fontSize": ["sm", "md", "lg"],
+    "width": ["narrow", "normal", "wide"]
+  },
+  "components": [
+    {
+      "name": "Section",
+      "kind": "container",
+      "attributes": [
+        { "name": "padding", "type": "space" },
+        { "name": "background", "type": "enum", "values": ["none", "subtle", "primary", "inverse"] },
+        { "name": "width", "type": "enum", "values": ["narrow", "normal", "wide", "full"] }
+      ],
+      "render": { "tag": "section", "class": "wge-section", "classes": ["padding", "background:bg", "width"] }
+    },
+    {
+      "name": "Stack",
+      "kind": "container",
+      "attributes": [
+        { "name": "direction", "type": "enum", "values": ["vertical", "horizontal"] },
+        { "name": "align", "type": "enum", "values": ["start", "center", "end", "stretch"] },
+        { "name": "justify", "type": "enum", "values": ["start", "center", "end", "between"] },
+        { "name": "gap", "type": "space" },
+        { "name": "wrap", "type": "enum", "values": ["true", "false"] }
+      ],
+      "render": { "tag": "div", "class": "wge-stack", "classes": ["direction", "align", "justify", "gap", "wrap"] }
+    },
+    {
+      "name": "Grid",
+      "kind": "container",
+      "attributes": [
+        { "name": "columns", "type": "int", "min": 1, "max": 6, "required": true },
+        { "name": "gap", "type": "space" }
+      ],
+      "render": { "tag": "div", "class": "wge-grid", "classes": ["columns", "gap"] }
+    },
+    {
+      "name": "Heading",
+      "kind": "text",
+      "attributes": [
+        { "name": "level", "type": "int", "min": 1, "max": 6, "required": true },
+        { "name": "align", "type": "enum", "values": ["start", "center", "end"] }
+      ],
+      "render": { "tag": "h{level}", "class": "wge-heading", "classes": ["align:text-align"] }
+    },
+    {
+      "name": "Text",
+      "kind": "text",
+      "attributes": [
+        { "name": "size", "type": "enum", "values": ["sm", "md", "lg"] },
+        { "name": "align", "type": "enum", "values": ["start", "center", "end"] }
+      ],
+      "render": { "tag": "p", "class": "wge-text", "classes": ["size", "align:text-align"] }
+    },
+    {
+      "name": "Button",
+      "kind": "text",
+      "excludes": ["Link"],
+      "attributes": [
+        { "name": "href", "type": "url", "required": true },
+        { "name": "variant", "type": "enum", "values": ["primary", "secondary"] }
+      ],
+      "render": { "tag": "a", "class": "wge-button", "classes": ["variant"], "attrs": ["href"] }
+    },
+    {
+      "name": "Image",
+      "kind": "void",
+      "attributes": [
+        { "name": "src", "type": "url", "required": true },
+        { "name": "alt", "type": "string", "required": true },
+        { "name": "ratio", "type": "enum", "values": ["auto", "1:1", "4:3", "16:9"] }
+      ],
+      "render": { "tag": "img", "class": "wge-image", "classes": ["ratio"], "attrs": ["src", "alt"], "fixed": [["loading", "lazy"], ["decoding", "async"]] }
+    },
+    {
+      "name": "Html",
+      "kind": "raw",
+      "trusted": true,
+      "attributes": []
+    },
+    {
+      "name": "Link",
+      "kind": "inline",
+      "excludes": ["Link"],
+      "attributes": [
+        { "name": "href", "type": "url", "required": true }
+      ],
+      "render": { "tag": "a", "attrs": ["href"] }
+    },
+    { "name": "Strong", "kind": "inline", "attributes": [], "render": { "tag": "strong" } },
+    { "name": "Em", "kind": "inline", "attributes": [], "render": { "tag": "em" } },
+    { "name": "Br", "kind": "inline-void", "attributes": [], "render": { "tag": "br" } }
+  ]
+}
