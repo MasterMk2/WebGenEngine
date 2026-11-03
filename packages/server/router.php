@@ -5,8 +5,8 @@
 // and the source packages as static files, the API under /api/, and the published site
 // under /site/. Nothing else is served, and no other PHP file is ever run from a URL.
 //
-// Not for a public server: there are no accounts yet, and the Html box writes its content
-// to the public page as it is (rendering.md §7). Keep it on 127.0.0.1.
+// Not for a public server: there are no accounts yet, so anyone who can open it can save
+// and publish (Html content is sanitized on publish, rendering.md §7). Keep it on 127.0.0.1.
 
 declare(strict_types=1);
 

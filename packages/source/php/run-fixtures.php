@@ -197,12 +197,15 @@ function runRenderCase(SourceFormat $fmt, array $schema, array $defaultTheme, st
         }
         if (array_key_exists('source', $c)) {
             $doc = $fmt->parse($c['source']);
+            // `trustRaw` marks a case rendered for an author who may publish raw HTML.
+            $trustRaw = ($c['trustRaw'] ?? false) === true;
             if (isset($c['html'])) {
-                $check($renderer->renderFragment($doc) === $c['html'], 'html', $renderer->renderFragment($doc), $c['html']);
+                $html = $renderer->renderFragment($doc, '', $trustRaw);
+                $check($html === $c['html'], 'html', $html, $c['html']);
             }
             if (isset($c['page'])) {
                 $p = $c['page'];
-                $page = $renderer->renderPage($doc, $p['title'], $p['lang'] ?? 'ja', $p['stylesheetHref'] ?? 'style.css');
+                $page = $renderer->renderPage($doc, $p['title'], $p['lang'] ?? 'ja', $p['stylesheetHref'] ?? 'style.css', $trustRaw);
                 if (isset($c['pageHtml'])) {
                     $check($page === $c['pageHtml'], 'page', $page, $c['pageHtml']);
                 }
