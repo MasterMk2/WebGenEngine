@@ -1,0 +1,41 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  js:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Shared fixtures
+        run: node packages/source/js/run-fixtures.mjs
+      - name: Editor tests
+        run: node --test packages/editor/*.test.mjs
+
+  php:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # D7: PHP 8.3 is the minimum; check every version up to the latest.
+        php: ['8.3', '8.4', '8.5']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, pdo_sqlite
+          coverage: none
+      - name: Shared fixtures
+        run: php -d error_reporting=-1 -d display_errors=1 packages/source/php/run-fixtures.php
+      - name: Save API tests
+        run: php -d error_reporting=-1 -d display_errors=1 packages/server/test.php
