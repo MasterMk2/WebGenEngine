@@ -127,9 +127,14 @@ function runRenderCase(c) {
     }
     if (c.source !== undefined) {
       const doc = fmt.parse(c.source);
-      if (c.html !== undefined) check(renderer.renderFragment(doc) === c.html, 'html', renderer.renderFragment(doc), c.html);
+      // `trustRaw` marks a case rendered for an author who may publish raw HTML.
+      const trustRaw = c.trustRaw === true;
+      if (c.html !== undefined) {
+        const html = renderer.renderFragment(doc, '', { trustRaw });
+        check(html === c.html, 'html', html, c.html);
+      }
       if (c.page) {
-        const page = renderer.renderPage(doc, c.page);
+        const page = renderer.renderPage(doc, { ...c.page, trustRaw });
         if (c.pageHtml !== undefined) check(page === c.pageHtml, 'page', page, c.pageHtml);
       }
     }

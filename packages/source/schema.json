@@ -83,7 +83,22 @@
       "name": "Html",
       "kind": "raw",
       "trusted": true,
-      "attributes": []
+      "attributes": [],
+      "sanitize": {
+        "elements": {
+          "a": ["href"], "abbr": [], "b": [], "blockquote": ["cite"], "br": [], "caption": [], "cite": [], "code": [],
+          "dd": [], "del": ["cite"], "div": [], "dl": [], "dt": [], "em": [], "figcaption": [], "figure": [],
+          "h1": [], "h2": [], "h3": [], "h4": [], "h5": [], "h6": [], "hr": [], "i": [],
+          "img": ["src", "alt", "width", "height"], "ins": ["cite"], "kbd": [], "li": [], "mark": [], "ol": ["start"],
+          "p": [], "pre": [], "q": ["cite"], "s": [], "small": [], "span": [], "strong": [], "sub": [], "sup": [],
+          "table": [], "tbody": [], "td": ["colspan", "rowspan"], "tfoot": [], "th": ["colspan", "rowspan", "scope"],
+          "thead": [], "tr": [], "u": [], "ul": []
+        },
+        "globalAttributes": ["title"],
+        "urlAttributes": ["href", "src", "cite"],
+        "void": ["br", "hr", "img"],
+        "dropContent": ["script", "style", "template", "iframe", "object", "noscript", "textarea", "title", "xmp", "noembed", "noframes", "plaintext", "svg", "math"]
+      }
     },
     {
       "name": "Link",

@@ -155,6 +155,13 @@ check($status === 409 && $body['reason'] === 'not-live', 'a publish that is not 
 [$status] = $post('/api/pages/menu/publish', ['revision' => 0]);
 check($status === 200 && is_file($site . '/menu/index.html') && str_contains((string) file_get_contents($site . '/menu/index.html'), 'href="../style.css"'), 'other pages are written to their own folder');
 
+// There are no accounts yet, so nobody may publish raw HTML (rendering.md §7).
+$raw = "<Html><script>alert(1)</script><img src=\"x\" onerror=\"alert(1)\"><a href=\"javascript:alert(1)\">a</a><p>本文</p></Html>\n";
+[$status] = $post('/api/pages/news/load', ['initialSource' => $raw]);
+[$status] = $post('/api/pages/news/publish', ['revision' => 0]);
+$news = (string) @file_get_contents($site . '/news/index.html');
+check($status === 200 && str_contains($news, '<img src="x"><a>a</a><p>本文</p>') && !str_contains($news, '<script') && !str_contains($news, 'onerror') && !str_contains($news, 'javascript:'), 'publish sanitizes the Html block');
+
 array_map('unlink', glob($site . '/*/*') ?: []);
 array_map('rmdir', glob($site . '/*', GLOB_ONLYDIR) ?: []);
 array_map('unlink', glob($site . '/*') ?: []);

@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace WebGenEngine\Source;
 
 require_once __DIR__ . '/SourceFormat.php';
+require_once __DIR__ . '/HtmlSanitizer.php';
 
 final class RenderError extends \RuntimeException
 {
@@ -29,11 +30,17 @@ final class Renderer
     /** @var array<string, array> */
     private array $components = [];
 
+    /** @var array<string, HtmlSanitizer> by raw component name */
+    private array $sanitizers = [];
+
     public function __construct(private readonly array $schema, private readonly array $theme, private readonly string $baseCss)
     {
         self::validateTheme($schema, $theme);
         foreach ($schema['components'] as $c) {
             $this->components[$c['name']] = $c;
+            if ($c['kind'] === 'raw') {
+                $this->sanitizers[$c['name']] = new HtmlSanitizer($c['sanitize'], $schema['urlSchemes']);
+            }
         }
     }
 
@@ -154,20 +161,21 @@ final class Renderer
     {
         $out = '';
         foreach ($children as $c) {
-            $out .= $c->type === 'text' ? self::escapeText($c->value) : $this->renderNode($c, '');
+            $out .= $c->type === 'text' ? self::escapeText($c->value) : $this->renderNode($c, '', false);
         }
         return $out;
     }
 
     // Returns null for nodes that are not published (comments).
-    private function renderNode(Node $node, string $indent): ?string
+    // Html content is sanitized unless $trustRaw says its author may publish raw HTML (§7).
+    private function renderNode(Node $node, string $indent, bool $trustRaw): ?string
     {
         if ($node->type === 'comment') {
             return null;
         }
         $comp = $this->components[$node->type];
         if ($comp['kind'] === 'raw') {
-            return $node->raw;
+            return $trustRaw ? $node->raw : $this->sanitizers[$node->type]->sanitize($node->raw);
         }
         [$tag, $open] = $this->openTag($comp, $node);
         if ($comp['kind'] === 'void' || $comp['kind'] === 'inline-void') {
@@ -177,7 +185,7 @@ final class Renderer
             $inner = $indent . '  ';
             $kids = [];
             foreach ($node->children as $c) {
-                $s = $this->renderNode($c, $inner);
+                $s = $this->renderNode($c, $inner, $trustRaw);
                 if ($s !== null) {
                     $kids[] = $s;
                 }
@@ -194,11 +202,11 @@ final class Renderer
         return $open . $this->inline($node->children) . '</' . $tag . '>';
     }
 
-    public function renderFragment(Document $doc, string $indent = ''): string
+    public function renderFragment(Document $doc, string $indent = '', bool $trustRaw = false): string
     {
         $out = '';
         foreach ($doc->children as $c) {
-            $s = $this->renderNode($c, $indent);
+            $s = $this->renderNode($c, $indent, $trustRaw);
             if ($s !== null) {
                 $out .= $indent . $s . "\n";
             }
@@ -206,7 +214,7 @@ final class Renderer
         return $out;
     }
 
-    public function renderPage(Document $doc, string $title, string $lang = 'ja', string $stylesheetHref = 'style.css'): string
+    public function renderPage(Document $doc, string $title, string $lang = 'ja', string $stylesheetHref = 'style.css', bool $trustRaw = false): string
     {
         if (preg_match(self::LANG, $lang) !== 1) {
             throw new RenderError('E_LANG', 'lang', '使えない言語コードです');
@@ -222,7 +230,7 @@ final class Renderer
             '</head>',
             '<body>',
             '<main class="wge-page">',
-            $this->renderFragment($doc, '  ') . '</main>',
+            $this->renderFragment($doc, '  ', $trustRaw) . '</main>',
             '</body>',
             '</html>',
             '',

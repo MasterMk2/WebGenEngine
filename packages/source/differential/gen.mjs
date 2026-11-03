@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createSourceFormat, SourceError, EditError } from '../js/source-format.mjs';
 import { createRenderer } from '../js/render.mjs';
+import { createSanitizer } from '../js/sanitize-html.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const schema = JSON.parse(readFileSync(join(root, 'schema.json'), 'utf8'));
@@ -30,6 +31,18 @@ const byKind = (kinds) => comps.filter((c) => kinds.includes(c.kind));
 const WORDS = ['ようこそ', '日本語の文', 'Hello', 'world', '𠮷野家', '🍣', '「引用」', 'A&amp;B', '&lt;x&gt;', '&#x1F363;', '&#32;', 'カタカナ', 'ｶﾀｶﾅ', '한국어', 'x'];
 const WS = [' ', '  ', '\n', '\n  ', '\n    ', '\t', '\r\n', '\r\n  ', ''];
 const BAD_VALUES = ['13px', 'javascript:x', '', '0', '7', 'middle', 'a b', 'DATA:x', 'a\rb', 'a\r\nb'];
+// Pieces of Html content, including what the sanitizer has to remove (rendering.md §7).
+const RAW = [
+  '<b>x</b>', '\n<iframe></iframe>\n', '', '<p title="t">段落</p>', '<br>', '　', 'a < b > c &amp; &nbsp;',
+  '<script>alert(1)</script>', '<SCRIPT src=//x>', '</script >', '<style>p{}</style>', '<textarea><b>t</b></textarea>',
+  '<img src=x onerror=alert(1)>', '<img/src="/a.png"/onload="x()"/alt=\'a\'>', '<p　onclick=x>全角</p>',
+  '<a href="javascript:alert(1)" onclick="x()">j</a>', '<a href="jav&#x09;ascript:x">t</a>', '<a href="&#106;avascript:x">n</a>',
+  '<a href=" JaVaScRiPt:x">s</a>', '<a href="https://example.com/?a=1&amp;b=2" title="&quot;q&quot; &copy;">ok</a>',
+  '<a href=/x title=t>u</a>', '<img src="data:image/png;base64,AA" alt="&#x1F363;&#0;&#xD800;&#1114112;">',
+  '<svg onload=alert(1)><circle/></svg>', '<math><mi>x</mi></math>', '<!-- c -->', '<!-->', '<!DOCTYPE html>', '<?x y?>',
+  '<scr<script>ipt>', '<p>未閉じ<b>太字', '</div></main>', '<b>x</i></b>', '<a href="/x"><a href="/y">n</a></a>',
+  '<table><tr><td colspan=2 style="x">セル</td></tr></table>', '<P TITLE=\'x"y\' title=z>q</P>', '<img src="/a.png" alt="',
+];
 
 function attrValue(attr) {
   if (chance(0.04)) return pick(BAD_VALUES);
@@ -69,7 +82,7 @@ function block(depth) {
   const comp = pick(byKind(depth > 3 ? ['text', 'void', 'raw'] : ['container', 'text', 'void', 'raw']));
   const open = `<${comp.name}${attrs(comp)}`;
   if (comp.kind === 'void') return open + pick(['/>', ' />']);
-  if (comp.kind === 'raw') return `${open}>${pick(['<b>x</b>', '\n<iframe></iframe>\n', ''])}</Html>`;
+  if (comp.kind === 'raw') return `${open}>${pick(RAW)}${chance(0.5) ? pick(RAW) + pick(RAW) : ''}</Html>`;
   if (chance(0.1)) return open + ' />';
   if (comp.kind === 'text') return `${open}>${pick(WS)}${inline(0, comp.excludes ?? [])}</${comp.name}>`;
   const indent = '  '.repeat(depth + 1);
@@ -145,7 +158,7 @@ function randomOps(doc) {
     } else if (r < 0.92) {
       op = { op: 'setInline', path: t.path, children: [{ type: 'text', value: pick(WORDS) + pick(WS) }, { type: 'Em', props: {}, children: [{ type: 'text', value: ' e ' }] }, { type: 'text', value: pick(WS) + 'z' }] };
     } else {
-      op = { op: 'setRaw', path: t.path, raw: pick(['<p>r</p>', 'a\r\nb', 'x</Html>', 'a\rb']) };
+      op = { op: 'setRaw', path: t.path, raw: pick(['<p>r</p>', 'a\r\nb', 'x</Html>', 'a\rb', pick(RAW)]) };
     }
     ops.push(op);
     try {
@@ -221,6 +234,45 @@ function stripRaw(node) {
   return { ...node, children: node.children.filter((c) => c.type !== 'Html').map(stripRaw) };
 }
 
+// What sanitizing promises for every Html block (rendering.md §7): only allowed elements
+// and attributes, URLs that pass the `url` rule, balanced elements, every `<` and `>` part
+// of such a tag, and nothing more to change when sanitized again.
+const policy = comps.find((c) => c.kind === 'raw').sanitize;
+const sanitize = createSanitizer(policy, schema.urlSchemes);
+function rawProblem(node) {
+  if (node.type === 'Html') {
+    const html = sanitize(node.raw);
+    const where = `in ${JSON.stringify(html)}`;
+    if (sanitize(html) !== html) return `sanitizing again changes the result ${where}`;
+    const open = [];
+    let tags = 0;
+    for (const [, closing, name, list] of html.matchAll(/<(\/?)([a-z0-9]+)((?: [a-z]+="[^"<>]*")*)>/g)) {
+      tags++;
+      if (!Object.hasOwn(policy.elements, name)) return `element ${name} ${where}`;
+      if (closing) {
+        if (open.pop() !== name) return `unbalanced </${name}> ${where}`;
+        continue;
+      }
+      for (const [, attr, value] of list.matchAll(/ ([a-z]+)="([^"]*)"/g)) {
+        if (!policy.elements[name].includes(attr) && !policy.globalAttributes.includes(attr)) return `attribute ${attr} on ${name} ${where}`;
+        if (!policy.urlAttributes.includes(attr)) continue;
+        const url = value.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+        const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):/.exec(url);
+        if (url === '' || /[\x00-\x20\x7f]/.test(url) || (scheme && !schema.urlSchemes.includes(scheme[1].toLowerCase()))) return `unsafe ${attr} ${where}`;
+      }
+      if (!policy.void.includes(name)) open.push(name);
+    }
+    if (open.length > 0) return `unclosed ${open.join(' ')} ${where}`;
+    if ((html.match(/</g) ?? []).length !== tags || (html.match(/>/g) ?? []).length !== tags) return `markup outside allowed tags ${where}`;
+    return null;
+  }
+  for (const c of node.children ?? []) {
+    const problem = rawProblem(c);
+    if (problem) return problem;
+  }
+  return null;
+}
+
 const fixtureSources = readdirSync(join(root, 'fixtures')).filter((f) => f.endsWith('.json'))
   .flatMap((f) => JSON.parse(readFileSync(join(root, 'fixtures', f), 'utf8')).map((c) => c.source));
 
@@ -235,7 +287,7 @@ function invariant(source, ops) {
     throw e;
   }
   if (fmt.serialize(doc) !== source) return 'untouched serialize differs from the source';
-  const before = htmlProblem(doc);
+  const before = htmlProblem(doc) ?? rawProblem(doc);
   if (before) return before;
   const canonical = fmt.serializeCanonical(doc);
   const again = fmt.parse(canonical);
@@ -248,7 +300,7 @@ function invariant(source, ops) {
       if (!(e instanceof EditError)) throw e;
     }
   }
-  const after = htmlProblem(doc);
+  const after = htmlProblem(doc) ?? rawProblem(doc);
   if (after) return after;
   const output = fmt.serialize(doc);
   try {

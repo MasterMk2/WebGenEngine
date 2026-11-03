@@ -7,7 +7,70 @@
   {
     "name": "grid, image ratio, raw HTML and an empty stack",
     "source": "<Grid columns=\"3\" gap=\"2xl\">\n  <Image src=\"/a.jpg\" alt=\"店内\" ratio=\"16:9\" />\n  <Html><iframe src=\"https://example.com/map\"></iframe>\n<p>2 行目</p></Html>\n  <Stack />\n</Grid>\n",
+    "trustRaw": true,
     "html": "<div class=\"wge-grid wge-columns-3 wge-gap-2xl\">\n  <img class=\"wge-image wge-ratio-16-9\" src=\"/a.jpg\" alt=\"店内\" loading=\"lazy\" decoding=\"async\">\n  <iframe src=\"https://example.com/map\"></iframe>\n<p>2 行目</p>\n  <div class=\"wge-stack\"></div>\n</div>\n"
+  },
+  {
+    "name": "Html is sanitized by default: the iframe goes, the paragraph stays",
+    "source": "<Grid columns=\"3\" gap=\"2xl\">\n  <Image src=\"/a.jpg\" alt=\"店内\" ratio=\"16:9\" />\n  <Html><iframe src=\"https://example.com/map\"></iframe>\n<p>2 行目</p></Html>\n  <Stack />\n</Grid>\n",
+    "html": "<div class=\"wge-grid wge-columns-3 wge-gap-2xl\">\n  <img class=\"wge-image wge-ratio-16-9\" src=\"/a.jpg\" alt=\"店内\" loading=\"lazy\" decoding=\"async\">\n  \n<p>2 行目</p>\n  <div class=\"wge-stack\"></div>\n</div>\n"
+  },
+  {
+    "name": "Html: content of a trusted author is published as written",
+    "source": "<Html><script>start()</script><p onclick=\"x()\">a</p></Html>\n",
+    "trustRaw": true,
+    "html": "<script>start()</script><p onclick=\"x()\">a</p>\n"
+  },
+  {
+    "name": "Html: script elements are removed with their content",
+    "source": "<Html><script>alert(1)</script><p>残る</p><SCRIPT type=\"module\">x()</SCRIPT ><script src=\"/a.js\" />y()<p>self-closing does not end a script</p></Html>\n",
+    "html": "<p>残る</p>\n"
+  },
+  {
+    "name": "Html: event handler attributes are removed",
+    "source": "<Html><img src=\"/a.png\" alt=\"写真\" onerror=\"alert(1)\"><img src=x onerror=alert(1)><img/src=\"/b.png\"/ONLOAD=\"x()\"/alt='b'><p onclick=\"x()\" title=\"説明\">文</p></Html>\n",
+    "html": "<img src=\"/a.png\" alt=\"写真\"><img src=\"x\"><img src=\"/b.png\" alt=\"b\"><p title=\"説明\">文</p>\n"
+  },
+  {
+    "name": "Html: javascript: and other unsafe URLs are removed",
+    "source": "<Html><a href=\"javascript:alert(1)\">a</a><a href=\"JaVaScRiPt:alert(1)\">b</a><a href=\"jav&#x09;ascript:alert(1)\">c</a><a href=\"&#106;avascript:alert(1)\">d</a><a href=\" javascript:alert(1)\">e</a><a href=\"vbscript:x\">f</a><img src=\"data:image/svg+xml,x\" alt=\"g\"><a href=\"java\nscript:x\">h</a></Html>\n",
+    "html": "<a>a</a><a>b</a><a>c</a><a>d</a><a>e</a><a>f</a><img alt=\"g\"><a>h</a>\n"
+  },
+  {
+    "name": "Html: allowed markup and safe URLs are kept as written",
+    "source": "<Html><h2>お知らせ</h2>\n<p>営業は<strong>9 時</strong>から<br>土日は<em>休み</em>です&nbsp;&copy;</p>\n<ul><li><a href=\"https://example.com/?a=1&amp;b=2\" title=\"地図\">地図</a></li><li><a href=\"/menu#top\">メニュー</a></li><li><a href=\"tel:0312345678\">電話</a></li></ul>\n<table><tr><th scope=\"col\">品</th><td colspan=\"2\">珈琲</td></tr></table></Html>\n",
+    "html": "<h2>お知らせ</h2>\n<p>営業は<strong>9 時</strong>から<br>土日は<em>休み</em>です&nbsp;&copy;</p>\n<ul><li><a href=\"https://example.com/?a=1&amp;b=2\" title=\"地図\">地図</a></li><li><a href=\"/menu#top\">メニュー</a></li><li><a href=\"tel:0312345678\">電話</a></li></ul>\n<table><tr><th scope=\"col\">品</th><td colspan=\"2\">珈琲</td></tr></table>\n"
+  },
+  {
+    "name": "Html: comments, tag tricks and stray end tags",
+    "source": "<Html><!-- メモ --><scr<script>ipt>alert(1)</script>\n<p>未閉じ<b>太字</div></main>\n<!DOCTYPE html><?php echo 1; ?>a < b</Html>\n",
+    "html": "ipt&gt;alert(1)\n<p>未閉じ<b>太字\na &lt; b</b></p>\n"
+  },
+  {
+    "name": "Html: svg, style, iframe and forms are removed",
+    "source": "<Html><svg onload=\"alert(1)\"><circle r=\"1\"/></svg><style>p { color: red }</style><form action=\"/x\"><input name=\"q\"><button formaction=\"javascript:x\">送信</button></form><iframe srcdoc=\"<script>x()</script>\"></iframe>後<math><mi>x</mi></math></Html>\n",
+    "html": "送信後\n"
+  },
+  {
+    "name": "Html: attributes are written out again in one form",
+    "source": "<Html><P TITLE='say \"hi\"' title=\"second\" class=\"x\" style=\"color:red\" id=y>A</P><a href=/x title=t>B</a><img src=\"/a.png\" alt=\"&#x1F363;&#0;&lt;&copy;\"><a href=\"/x\" href=\"javascript:x\">C</a><a href=\"javascript:x\" href=\"/y\">D</a></Html>\n",
+    "html": "<p title=\"say &quot;hi&quot;\">A</p><a href=\"/x\" title=\"t\">B</a><img src=\"/a.png\" alt=\"🍣�&lt;&amp;copy;\"><a href=\"/x\">C</a><a>D</a>\n"
+  },
+  {
+    "name": "Html: a full-width space is not a space inside a tag",
+    "source": "<Html><p　onclick=\"x()\">全角</p>　<b>太</b></Html>\n",
+    "html": "全角　<b>太</b>\n"
+  },
+  {
+    "name": "Html: a tag cut off by the end of the block is dropped, and open elements are closed",
+    "source": "<Html><ul><li>一<li>二<b>太<a href=\"/y</Html>\n",
+    "html": "<ul><li>一<li>二<b>太</b></li></li></ul>\n"
+  },
+  {
+    "name": "Html is sanitized on a whole page too",
+    "source": "<Html><script>x()</script><p>本文</p></Html>\n",
+    "page": {"title": "t"},
+    "pageHtml": "<!doctype html>\n<html lang=\"ja\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>t</title>\n<link rel=\"stylesheet\" href=\"style.css\">\n</head>\n<body>\n<main class=\"wge-page\">\n  <p>本文</p>\n</main>\n</body>\n</html>\n"
   },
   {
     "name": "class order follows the schema, not the source",

@@ -2,6 +2,8 @@
 // Spec: docs/design/rendering.md. Behaviour must match php/Renderer.php; both are
 // checked against ../fixtures/render by their run-fixtures scripts.
 
+import { createSanitizer } from './sanitize-html.mjs';
+
 export class RenderError extends Error {
   constructor(code, key, message) {
     super(`${code} ${key}: ${message}`);
@@ -66,6 +68,7 @@ export function validateTheme(schema, theme) {
 export function createRenderer(schema, theme, baseCss) {
   validateTheme(schema, theme);
   const components = new Map(schema.components.map((c) => [c.name, c]));
+  const sanitizers = new Map(schema.components.filter((c) => c.kind === 'raw').map((c) => [c.name, createSanitizer(c.sanitize, schema.urlSchemes)]));
 
   function classesOf(comp, props) {
     const r = comp.render;
@@ -92,24 +95,25 @@ export function createRenderer(schema, theme, baseCss) {
   }
 
   function inline(children) {
-    return children.map((c) => (c.type === 'text' ? escapeText(c.value) : renderNode(c, '', null))).join('');
+    return children.map((c) => (c.type === 'text' ? escapeText(c.value) : renderNode(c, '', null, false))).join('');
   }
 
   // Returns null for nodes that are not published (comments).
   // `path` is set only in the editor preview: blocks get data-wge-path, and Html becomes
   // an inert placeholder so its content never runs inside the editor.
-  function renderNode(node, indent, path) {
+  // Otherwise Html content is sanitized unless `trustRaw` says its author may publish raw HTML (§7).
+  function renderNode(node, indent, path, trustRaw) {
     if (node.type === 'comment') return null;
     const comp = components.get(node.type);
     if (comp.kind === 'raw') {
-      if (!path) return node.raw;
-      return `<div data-wge-path="${path.join('.')}" class="wge-edit-raw">Html</div>`;
+      if (path) return `<div data-wge-path="${path.join('.')}" class="wge-edit-raw">Html</div>`;
+      return trustRaw ? node.raw : sanitizers.get(node.type)(node.raw);
     }
     const [tag, open] = openTag(comp, node, path);
     if (comp.kind === 'void' || comp.kind === 'inline-void') return open;
     if (comp.kind === 'container') {
       const inner = indent + '  ';
-      const kids = node.children.map((c, i) => renderNode(c, inner, path && [...path, i])).filter((s) => s !== null);
+      const kids = node.children.map((c, i) => renderNode(c, inner, path && [...path, i], trustRaw)).filter((s) => s !== null);
       if (kids.length === 0) return `${open}</${tag}>`;
       return open + kids.map((k) => `\n${inner}${k}`).join('') + `\n${indent}</${tag}>`;
     }
@@ -117,15 +121,15 @@ export function createRenderer(schema, theme, baseCss) {
   }
 
   // `annotate` is for the editor preview only; published pages never carry the extra attributes.
-  function renderFragment(doc, indent = '', { annotate = false } = {}) {
+  function renderFragment(doc, indent = '', { annotate = false, trustRaw = false } = {}) {
     return doc.children
-      .map((c, i) => renderNode(c, indent, annotate ? [i] : null))
+      .map((c, i) => renderNode(c, indent, annotate ? [i] : null, trustRaw))
       .filter((s) => s !== null)
       .map((s) => `${indent}${s}\n`)
       .join('');
   }
 
-  function renderPage(doc, { title, lang = 'ja', stylesheetHref = 'style.css' }) {
+  function renderPage(doc, { title, lang = 'ja', stylesheetHref = 'style.css', trustRaw = false }) {
     if (!LANG.test(lang)) throw new RenderError('E_LANG', 'lang', '使えない言語コードです');
     return [
       '<!doctype html>',
@@ -138,7 +142,7 @@ export function createRenderer(schema, theme, baseCss) {
       '</head>',
       '<body>',
       '<main class="wge-page">',
-      renderFragment(doc, '  ') + '</main>',
+      renderFragment(doc, '  ', { trustRaw }) + '</main>',
       '</body>',
       '</html>',
       '',
