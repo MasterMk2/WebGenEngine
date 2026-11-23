@@ -1,0 +1,11 @@
+.git
+.github
+.claude
+docs
+tools
+packages/server/data
+packages/source/differential
+packages/source/fixtures
+**/*.test.mjs
+**/run-fixtures.*
+**/run-docker.sh

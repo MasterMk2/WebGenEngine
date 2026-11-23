@@ -5,8 +5,9 @@
 // and the source packages as static files, the API under /api/, and the published site
 // under /site/. Nothing else is served, and no other PHP file is ever run from a URL.
 //
-// Not for a public server: there are no accounts yet, so anyone who can open it can save
+// Not for a public server: there are no accounts here, so anyone who can open it can save
 // and publish (Html content is sanitized on publish, rendering.md §7). Keep it on 127.0.0.1.
+// To run behind an app that signs its users in, use trusted-front.php (server.md §6).
 
 declare(strict_types=1);
 
@@ -14,9 +15,11 @@ require __DIR__ . '/../source/php/SourceFormat.php';
 require __DIR__ . '/../source/php/Renderer.php';
 require __DIR__ . '/PageStore.php';
 require __DIR__ . '/Api.php';
+require __DIR__ . '/StaticFiles.php';
 
 use WebGenEngine\Server\Api;
 use WebGenEngine\Server\PageStore;
+use WebGenEngine\Server\StaticFiles;
 use WebGenEngine\Source\Renderer;
 use WebGenEngine\Source\SourceFormat;
 
@@ -24,32 +27,6 @@ $packages = dirname(__DIR__);
 $data = getenv('WGE_DATA') ?: __DIR__ . '/data';
 $site = $data . '/site';
 $path = rawurldecode((string) parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH));
-
-const TYPES = [
-    'html' => 'text/html; charset=utf-8',
-    'mjs' => 'text/javascript; charset=utf-8',
-    'js' => 'text/javascript; charset=utf-8',
-    'css' => 'text/css; charset=utf-8',
-    'json' => 'application/json; charset=utf-8',
-    'txt' => 'text/plain; charset=utf-8',
-    'svg' => 'image/svg+xml',
-];
-
-function sendFile(string $root, string $relative): void
-{
-    if (str_ends_with($relative, '/') || $relative === '') {
-        $relative .= 'index.html';
-    }
-    $type = TYPES[pathinfo($relative, PATHINFO_EXTENSION)] ?? null;
-    // No dot segments or hidden files, and only the listed types (never .php).
-    if ($type === null || preg_match('#(^|/)\.#', $relative) === 1 || !is_file($root . '/' . $relative)) {
-        http_response_code(404);
-        return;
-    }
-    header('Content-Type: ' . $type);
-    header('Cache-Control: no-store');
-    readfile($root . '/' . $relative);
-}
 
 if ($path === '/') {
     header('Location: /editor/', true, 302);
@@ -82,15 +59,15 @@ if (str_starts_with($path, '/api/')) {
 if (preg_match('#^/site/(.*)$#D', $path, $m) === 1) {
     // Until there is a media library, the sample page's images come from the editor's sample folder.
     if (str_starts_with($m[1], 'sample/')) {
-        sendFile($packages . '/editor', $m[1]);
+        StaticFiles::send($packages . '/editor', $m[1]);
     } else {
-        sendFile($site, $m[1]);
+        StaticFiles::send($site, $m[1]);
     }
     return true;
 }
 
 if (preg_match('#^/(editor|source)/(.*)$#D', $path, $m) === 1) {
-    sendFile($packages . '/' . $m[1], $m[2]);
+    StaticFiles::send($packages . '/' . $m[1], $m[2]);
     return true;
 }
 

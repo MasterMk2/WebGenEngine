@@ -1145,7 +1145,7 @@ function showSaveState(kind) {
 // The save state when nothing is running: what the header shows after a no-op.
 function restingSaveState() {
   if (saving.conflict) return 'conflict';
-  if (saving.failed) return saving.failed === 'blocked' ? 'blocked' : 'failed';
+  if (saving.failed) return saving.failed === 'blocked' || saving.failed === 'refused' ? 'blocked' : 'failed';
   return state.source !== saving.savedSource || state.editing?.dirty ? 'pending' : 'saved';
 }
 
@@ -1191,12 +1191,22 @@ async function saveDraft() {
     saving.failed = 'blocked';
     showSaveState('blocked');
     status(WAF_HELP, 'error');
+  } else if (res.reason === 'forbidden' || res.reason === 'unauthenticated') {
+    // The front that signs people in refused (server.md §6): a retry would be refused too.
+    saving.failed = 'refused';
+    showSaveState('blocked');
+    status(serverMessage(res, '保存する権限がありません。書いた内容はこの画面に残っています'), 'error');
   } else {
     saving.failed = res.reason ?? 'unknown';
     showSaveState('failed');
     clearTimeout(saving.timer);
     saving.timer = setTimeout(saveNow, 5000);
   }
+}
+
+// A refusal from the front that signs people in carries its own words (server.md §6).
+function serverMessage(res, fallback) {
+  return typeof res.message === 'string' && res.message !== '' ? res.message : fallback;
 }
 
 // Shown when an answer did not come from the API (requirements §3.3: a WAF on rental servers).
@@ -1251,7 +1261,7 @@ async function publish() {
   if (!res.ok) {
     if (res.reason === 'blocked') status(WAF_HELP, 'error');
     else if (res.reason === 'network') status('サーバーにつながらないため、公開できませんでした。つながってからもう一度押してください', 'error');
-    else status('公開できませんでした。もう一度押してください', 'error');
+    else status(serverMessage(res, '公開できませんでした。もう一度押してください'), 'error');
     return;
   }
   saving.publishedSource = source;
@@ -1265,7 +1275,7 @@ async function publish() {
 async function undoPublish(versionId) {
   const res = await store.undoPublish(versionId);
   if (!res.ok) {
-    status('すでに別の版が公開されているため、取り消せません。履歴から戻してください', 'error');
+    status(res.reason === 'not-live' ? 'すでに別の版が公開されているため、取り消せません。履歴から戻してください' : serverMessage(res, '公開を取り消せませんでした'), 'error');
     return;
   }
   saving.publishedSource = res.published ? await store.getVersion(res.published.id) : null;
@@ -1423,8 +1433,15 @@ const readable = (source) => {
 // Served with the PHP API, the page lives on the server; the first open there starts from
 // the sample. Otherwise it lives in this browser, starting from what the earlier prototype
 // kept, else the sample.
-const SITE_URL = '../site/';
 const ping = await fetch('../api/ping', { cache: 'no-store' }).then((r) => r.json()).catch(() => null);
+// Behind a front, the published site is served on its own origin and the API says where (server.md §6).
+const SITE_URL = typeof ping?.siteUrl === 'string' && /^https?:\/\//.test(ping.siteUrl) ? ping.siteUrl : '../site/';
+$('view-site').href = SITE_URL;
+if (ping?.wge === 1 && ping.ok === false) {
+  // The front refused (signed out, or the server behind it is down): never fall back to this browser's copy.
+  status(serverMessage(ping, 'サーバーが編集を受け付けませんでした'), 'error');
+  throw new Error('the save API refused the editor');
+}
 let page;
 if (ping?.wge === 1) {
   try {
