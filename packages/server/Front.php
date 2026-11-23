@@ -25,6 +25,8 @@ final class Front
         /** One JSON line per change (time, actor, path, status); null keeps none */
         private readonly ?string $auditFile = null,
         ?\Closure $now = null,
+        /** The editor's sample images beside published pages (not for a blog, whose posts start without them) */
+        private readonly bool $copySamples = true,
     ) {
         $this->now = $now ?? static fn (): int => (int) floor(microtime(true) * 1000);
     }
@@ -50,11 +52,16 @@ final class Front
             [$status, $reply] = $this->api->handle($method, $target, $body, $headers);
             if ($method === 'POST') {
                 $this->record($check['actor'], $target, $status);
-                if ($status === 200 && preg_match('#^/api/pages/[a-z0-9-]+/(publish|undo-publish)$#D', $target) === 1) {
+                if ($this->copySamples && $status === 200 && preg_match('#^/api/pages/[a-z0-9-]+/(publish|undo-publish)$#D', $target) === 1) {
                     $this->copySampleImages();
                 }
             }
             return [$status, ['Content-Type' => 'application/json; charset=utf-8', 'Cache-Control' => 'no-store'], json_encode($reply, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)];
+        }
+        // Images of the pages, for the editor's preview (posts reach them as ../media/…). Images only: never SVG.
+        if ($method === 'GET' && preg_match('#^/media/([0-9a-f]{16}\.(?:jpg|png|gif|webp))$#D', $target, $m) === 1) {
+            $file = StaticFiles::read($this->siteDir . '/media', $m[1]);
+            return $file === null ? self::NOT_FOUND : [200, ['Content-Type' => $file[0], 'Cache-Control' => 'no-store', 'X-Content-Type-Options' => 'nosniff'], $file[1]];
         }
         if ($method === 'GET' && preg_match('#^/(editor|source)/(.*)$#D', $target, $m) === 1) {
             $file = StaticFiles::read($this->packages . '/' . $m[1], $m[2]);

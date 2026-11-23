@@ -9,7 +9,14 @@
 <body>
 <header class="toolbar">
   <strong class="brand">WebGenEngine</strong>
-  <span class="page-name">トップページ</span>
+  <a id="posts-link" class="link posts-link" href="posts.html" hidden>記事の一覧</a>
+  <span class="page-name" id="page-name">トップページ</span>
+  <div class="page-meta" id="page-meta" hidden>
+    <label class="sr-only" for="page-title">題名</label>
+    <input id="page-title" maxlength="120" autocomplete="off" title="題名（一覧とブラウザのタブに出ます）">
+    <label class="sr-only" for="page-date">日付</label>
+    <input id="page-date" type="date" title="記事の日付（一覧はこの順に並びます）">
+  </div>
   <div class="group" role="group" aria-label="操作の履歴">
     <button type="button" id="undo" title="元に戻す (Ctrl+Z)">元に戻す</button>
     <button type="button" id="redo" title="やり直す (Ctrl+Y)">やり直す</button>

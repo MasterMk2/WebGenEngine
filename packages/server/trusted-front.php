@@ -8,6 +8,8 @@
 //   WGE_DATA          folder for wge.sqlite and audit.jsonl (default: packages/server/data)
 //   WGE_SITE_DIR      folder the published pages are written to (default: WGE_DATA/site)
 //   WGE_SITE_URL      where the published site is seen (http:// or https://), for "サイトを見る"
+//   WGE_BLOG_TITLE    when set, the site is a blog with this name: its contents page and feed
+//                     are made from the published posts (docs/design/blog.md)
 // Without a usable key and client ID nothing is served: it never falls back to router.php's
 // open behaviour.
 
@@ -17,11 +19,13 @@ require __DIR__ . '/../source/php/SourceFormat.php';
 require __DIR__ . '/../source/php/Renderer.php';
 require __DIR__ . '/PageStore.php';
 require __DIR__ . '/Api.php';
+require __DIR__ . '/Blog.php';
 require __DIR__ . '/StaticFiles.php';
 require __DIR__ . '/SvcAuth.php';
 require __DIR__ . '/Front.php';
 
 use WebGenEngine\Server\Api;
+use WebGenEngine\Server\Blog;
 use WebGenEngine\Server\Front;
 use WebGenEngine\Server\PageStore;
 use WebGenEngine\Server\SvcAuth;
@@ -62,12 +66,20 @@ $db = PageStore::openDatabase('sqlite:' . $data . '/wge.sqlite');
 // The built-in server may run several workers (PHP_CLI_SERVER_WORKERS); they wait for each other's writes.
 $db->exec('PRAGMA busy_timeout = 5000');
 
+$format = SourceFormat::fromSchemaFile($packages . '/source/schema.json');
+$renderer = Renderer::fromFiles($packages . '/source');
+$blogTitle = trim((string) getenv('WGE_BLOG_TITLE'));
+if ($blogTitle !== '' && (mb_strlen($blogTitle) > 120 || preg_match('/[\x00-\x1f\x7f]/', $blogTitle) === 1)) {
+    return $refuse('WGE_BLOG_TITLE must be one line of 120 characters or fewer');
+}
+$blog = $blogTitle === '' ? null : new Blog($blogTitle, $format, $renderer, $siteUrl);
 $front = new Front(
     new SvcAuth($key, $client, $db),
-    new Api($db, $site, SourceFormat::fromSchemaFile($packages . '/source/schema.json'), Renderer::fromFiles($packages . '/source'), siteUrl: $siteUrl),
+    new Api($db, $site, $format, $renderer, siteUrl: $siteUrl, blog: $blog),
     $packages,
     $site,
     $data . '/audit.jsonl',
+    copySamples: $blog === null,
 );
 $headers = array_change_key_case(function_exists('getallheaders') ? getallheaders() : [], CASE_LOWER);
 [$status, $replyHeaders, $out] = $front->handle($_SERVER['REQUEST_METHOD'] ?? 'GET', $_SERVER['REQUEST_URI'] ?? '/', (string) file_get_contents('php://input'), $headers);

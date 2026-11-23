@@ -21,6 +21,8 @@ WordPress の上位互換を目指す CMS です。**試作の段階で、まだ
 
 利用者のログインと権限を持つアプリの後ろに置く形（前段が許した要求だけを署名付きで中継する）は使えます。入口は `packages/server/trusted-front.php`、コンテナは `Dockerfile` です。仕組みと設定は [docs/design/server.md](docs/design/server.md) §6 にあります。
 
+ブログとしても使えます（`WGE_BLOG_TITLE`）。記事の一覧から書き始め、題名・日付・画像をエディタで直し、公開のたびに目次とフィード（RSS）を作り直します。仕組みは [docs/design/blog.md](docs/design/blog.md) にあります。
+
 ## 動かし方
 
 エディタだけ（保存はブラウザの中）：

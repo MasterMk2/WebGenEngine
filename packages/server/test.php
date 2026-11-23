@@ -9,11 +9,13 @@ require __DIR__ . '/../source/php/SourceFormat.php';
 require __DIR__ . '/../source/php/Renderer.php';
 require __DIR__ . '/PageStore.php';
 require __DIR__ . '/Api.php';
+require __DIR__ . '/Blog.php';
 require __DIR__ . '/StaticFiles.php';
 require __DIR__ . '/SvcAuth.php';
 require __DIR__ . '/Front.php';
 
 use WebGenEngine\Server\Api;
+use WebGenEngine\Server\Blog;
 use WebGenEngine\Server\Front;
 use WebGenEngine\Server\PageStore;
 use WebGenEngine\Server\SvcAuth;
@@ -269,6 +271,94 @@ array_map('rmdir', glob($site . '/*', GLOB_ONLYDIR) ?: []);
 array_map('unlink', glob($site . '/*') ?: []);
 rmdir($site);
 unlink($audit);
+
+// ------------------------------------------------------- part 5: a blog (blog.md)
+
+$site = sys_get_temp_dir() . '/wge-test-blog-' . bin2hex(random_bytes(4));
+$format = SourceFormat::fromSchemaFile($packages . '/source/schema.json');
+$renderer = Renderer::fromFiles($packages . '/source');
+$blogDb = PageStore::openDatabase('sqlite::memory:');
+$blogApi = new Api($blogDb, $site, $format, $renderer, blog: new Blog('合成のお知らせ', $format, $renderer, 'https://site.example/blog/'));
+$bpost = static fn (string $path, array $body) => $blogApi->handle('POST', $path, json_encode($body), $json);
+$post = "<Section padding=\"lg\" width=\"narrow\">\n  <Heading level=\"1\">合成の記事</Heading>\n</Section>\n";
+
+[$status, $body] = $blogApi->handle('GET', '/api/ping', '', []);
+check($status === 200 && ($body['blog'] ?? null) === true && $body['blogTitle'] === '合成のお知らせ', 'ping says the site is a blog');
+[$status] = $bpost('/api/pages/top/load', ['initialSource' => $post]);
+check($status === 404, 'with a blog, "top" is its contents page and cannot be edited');
+[$status, $body] = $blogApi->handle('GET', '/api/pages', '', []);
+check($status === 200 && $body['pages'] === [], 'no pages at first');
+
+[$status, $body] = $bpost('/api/pages/20261123-a1b2/load', ['initialSource' => $post, 'meta' => ['title' => '合成の記事 <b>&"', 'date' => '2026-11-23']]);
+check($status === 200 && $body['meta'] === ['title' => '合成の記事 <b>&"', 'date' => '2026-11-23'], 'a new post comes with its title and date');
+foreach ([[['title' => '', 'date' => '2026-11-23'], 'invalid-title'], [['title' => "二\n行", 'date' => '2026-11-23'], 'invalid-title'], [['title' => str_repeat('長', 121), 'date' => '2026-11-23'], 'invalid-title'], [['title' => '題', 'date' => '2026-02-30'], 'invalid-date'], [['title' => '題', 'date' => '23/11/2026'], 'invalid-date']] as [$meta, $reason]) {
+    [$status, $body] = $bpost('/api/pages/20261123-a1b2/meta', $meta);
+    check($status === 422 && $body['reason'] === $reason, "a bad title or date is refused: {$reason} " . json_encode($meta, JSON_UNESCAPED_UNICODE));
+}
+[$status] = $bpost('/api/pages/missing/meta', ['title' => '題', 'date' => '2026-11-23']);
+check($status === 404, 'a title for a page not loaded is refused');
+
+[$status] = $bpost('/api/pages/20261123-a1b2/publish', ['revision' => 0]);
+$contents = (string) @file_get_contents($site . '/index.html');
+$page = (string) @file_get_contents($site . '/20261123-a1b2/index.html');
+check($status === 200 && str_contains($page, '<title>合成の記事 &lt;b&gt;&amp;"</title>'), 'a post is written with its title, escaped as text');
+check(str_contains($contents, 'href="20261123-a1b2/"') && str_contains($contents, '2026年11月23日') && str_contains($contents, '合成の記事 &lt;b&gt;') && !str_contains($contents, '<b>'), 'the contents page lists the post, its title escaped');
+check(!str_contains($contents, 'data-wge-path') && str_contains($contents, 'href="style.css"'), 'the contents page is a plain public page');
+$feed = (string) @file_get_contents($site . '/feed.xml');
+check(str_contains($feed, '<link>https://site.example/blog/20261123-a1b2/</link>') && str_contains($feed, '<title>合成の記事 &lt;b&gt;&amp;&quot;</title>') && str_contains($feed, '+0900'), 'the feed has the post, with its link and date');
+
+[$status] = $bpost('/api/pages/20261101-c3d4/load', ['initialSource' => $post, 'meta' => ['title' => '合成の古い記事', 'date' => '2026-11-01']]);
+[$status] = $bpost('/api/pages/20261101-c3d4/publish', ['revision' => 0]);
+$contents = (string) @file_get_contents($site . '/index.html');
+check(strpos($contents, '20261123-a1b2/') < strpos($contents, '20261101-c3d4/'), 'the contents page lists the newest post first');
+[$status, $body] = $bpost('/api/pages/20261101-c3d4/meta', ['title' => '合成の改めた題', 'date' => '2026-12-01']);
+$contents = (string) @file_get_contents($site . '/index.html');
+check($status === 200 && str_contains($contents, '合成の改めた題') && strpos($contents, '20261101-c3d4/') < strpos($contents, '20261123-a1b2/'), 'a new title or date rewrites the contents page');
+check(str_contains((string) @file_get_contents($site . '/20261101-c3d4/index.html'), '<title>合成の改めた題</title>'), 'a new title rewrites the published post');
+[$status, $body] = $blogApi->handle('GET', '/api/pages', '', []);
+check(array_column($body['pages'], 'id') === ['20261101-c3d4', '20261123-a1b2'] && $body['pages'][0]['published'] === true, 'the list has the pages, newest date first');
+
+$liveOf = static function (string $id) use ($blogApi): int {
+    [, $body] = $blogApi->handle('GET', "/api/pages/{$id}/versions", '', []);
+    return array_values(array_filter($body['versions'], static fn (array $v) => $v['live'] ?? false))[0]['id'];
+};
+[$status] = $bpost('/api/pages/20261101-c3d4/undo-publish', ['versionId' => $liveOf('20261101-c3d4')]);
+[$status] = $bpost('/api/pages/20261123-a1b2/undo-publish', ['versionId' => $liveOf('20261123-a1b2')]);
+$contents = (string) @file_get_contents($site . '/index.html');
+check(str_contains($contents, 'まだ記事はありません') && !is_file($site . '/20261123-a1b2/index.html'), 'taking every post back leaves an empty contents page');
+
+// Images: told by their bytes, named by their content, never SVG.
+$png = "\x89PNG\r\n\x1A\n" . str_repeat("\0", 32);
+[$status, $body] = $bpost('/api/media', ['data' => base64_encode($png)]);
+check($status === 200 && preg_match('#^\.\./media/[0-9a-f]{16}\.png$#D', $body['src']) === 1 && is_file($site . '/media/' . basename($body['src'])), 'a PNG is saved under media/');
+$src = $body['src'];
+[$status, $body] = $bpost('/api/media', ['data' => base64_encode($png)]);
+check($status === 200 && $body['src'] === $src, 'the same image is kept once');
+foreach (['<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>', 'not an image', "GIF8"] as $bytes) {
+    [$status, $body] = $bpost('/api/media', ['data' => base64_encode($bytes)]);
+    check($status === 415 && $body['reason'] === 'not-image', 'only JPEG, PNG, GIF and WebP are taken: ' . substr($bytes, 0, 12));
+}
+[$status, $body] = $bpost('/api/media', ['data' => base64_encode("\xFF\xD8\xFF" . str_repeat('a', Api::MAX_IMAGE))]);
+check($status === 413 && $body['reason'] === 'too-large', 'an image over the limit is refused');
+[$status] = $bpost('/api/media', ['data' => '***']);
+check($status === 400, 'data that is not base64 is a bad request');
+check(Api::imageType('RIFF' . "\0\0\0\0" . 'WEBPVP8 ') === 'webp' && Api::imageType("GIF89a\0") === 'gif' && Api::imageType("\xFF\xD8\xFF\xE0") === 'jpg', 'WebP, GIF and JPEG are told by their bytes');
+
+$mediaFront = new Front(new SvcAuth($key, 'front-app', $blogDb, static function () use (&$clock): int {
+    return $clock;
+}), $blogApi, $packages, $site);
+$frontCall = static fn (string $path) => $mediaFront->handle('GET', $path, '', $signed('GET', $path, ''));
+[$status, $headers, $out] = $frontCall('/media/' . basename($src));
+check($status === 200 && $headers['Content-Type'] === 'image/png' && $headers['X-Content-Type-Options'] === 'nosniff' && $out === $png, 'the front serves a saved image for the preview');
+foreach (['/media/../index.html', '/media/x.svg', '/media/' . str_repeat('0', 16) . '.png', '/index.html', '/feed.xml'] as $path) {
+    [$status] = $frontCall($path);
+    check($status === 404, "the front serves no other file of the site: {$path}");
+}
+
+array_map('unlink', glob($site . '/*/*') ?: []);
+array_map('rmdir', glob($site . '/*', GLOB_ONLYDIR) ?: []);
+array_map('unlink', glob($site . '/*') ?: []);
+rmdir($site);
 
 foreach ($failures as $f) {
     echo "FAIL {$f}\n";
