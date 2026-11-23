@@ -8,6 +8,7 @@ import { slotIndex, slotGuide, nearEdge, moveArgs } from './slots.mjs';
 import { inlineFromDom } from './inline-dom.mjs';
 import { createPageStore } from './store.mjs';
 import { createHttpStore } from './http-store.mjs';
+import { cleanTitle, fitWithin, PAGE_ID } from './posts-core.mjs';
 
 const fetchText = (p) => fetch(p).then((r) => {
   if (!r.ok) throw new Error(`${p}: ${r.status}`);
@@ -978,6 +979,7 @@ function renderProps() {
     const control = attrControl(attr, node.props[attr.name], (value) => apply((doc) => sf.edit.setProp(doc, path, attr.name, value), path));
     panel.append(field(ATTRS[attr.name] ?? attr.name, attr.name, control));
   }
+  if (node.type === 'Image' && serverMode) panel.append(uploadControl(path));
 
   if (comp.kind === 'text') {
     const note = document.createElement('p');
@@ -1102,9 +1104,13 @@ function webStorage() {
 }
 
 const storage = webStorage();
+// The page being edited: index.html#p=<id> (the list of posts opens them so, blog.md); else "top".
+const PAGE = /^#p=([a-z0-9-]+)$/.exec(location.hash)?.[1] ?? 'top';
+const pageId = PAGE_ID.test(PAGE) ? PAGE : 'top';
+window.addEventListener('hashchange', () => location.reload());
 // Replaced at start-up by the server's store when the editor is served with the PHP API
 // (packages/server/router.php); otherwise the page stays in this browser.
-let store = createPageStore(storage, 'top');
+let store = createPageStore(storage, pageId);
 let serverMode = false;
 const saving = {
   revision: 0, // draft revision the editor's source is based on
@@ -1207,6 +1213,109 @@ async function saveDraft() {
 // A refusal from the front that signs people in carries its own words (server.md §6).
 function serverMessage(res, fallback) {
   return typeof res.message === 'string' && res.message !== '' ? res.message : fallback;
+}
+
+// A POST to the save API, answered in its own form, or as 'blocked' / 'network' like the store's.
+async function postJson(url, body) {
+  try {
+    const res = await fetch(url, { method: 'POST', cache: 'no-store', headers: { 'content-type': 'application/json', 'x-wge-request': '1' }, body: JSON.stringify(body) });
+    const data = await res.json().catch(() => null);
+    return data?.wge === 1 ? data : { ok: false, reason: 'blocked' };
+  } catch {
+    return { ok: false, reason: 'network' };
+  }
+}
+
+// The page's title and date (a blog post's): shown in the toolbar and saved when changed (blog.md).
+function showMeta(meta) {
+  $('page-name').hidden = true;
+  $('page-meta').hidden = false;
+  $('page-title').value = meta.title;
+  $('page-date').value = meta.date;
+  document.title = `${meta.title} – エディタ`;
+}
+
+async function saveMeta() {
+  const title = cleanTitle($('page-title').value);
+  const date = $('page-date').value;
+  if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    status('題名は 1 行で 120 文字まで、日付は必ず入れてください', 'error');
+    return;
+  }
+  const res = await postJson(`../api/pages/${pageId}/meta`, { title, date });
+  if (!res.ok) {
+    status(serverMessage(res, '題名と日付を保存できませんでした'), 'error');
+    return;
+  }
+  document.title = `${title} – エディタ`;
+  status(saving.publishedSource !== null ? '題名と日付を保存しました。公開中のページにも出ています' : '題名と日付を保存しました', 'ok');
+}
+$('page-title').addEventListener('change', saveMeta);
+$('page-date').addEventListener('change', saveMeta);
+
+// A picture for an Image block (with the server only). A photo is made smaller first (1600 px,
+// JPEG), so a phone's picture fits; a small PNG (a logo) and a GIF go as they are (blog.md).
+const IMAGE_MAX = 2_500_000;
+
+async function imageForUpload(file) {
+  if (file.type === 'image/gif' || (file.type === 'image/png' && file.size <= 1_000_000)) return file;
+  const bitmap = await createImageBitmap(file);
+  const { width, height } = fitWithin(bitmap.width, bitmap.height, 1600);
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  // JPEG has no transparency: what was transparent becomes white, not black.
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(bitmap, 0, 0, width, height);
+  bitmap.close?.();
+  return new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('encode'))), 'image/jpeg', 0.85));
+}
+
+function base64Of(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+function uploadControl(path) {
+  const wrap = document.createElement('div');
+  wrap.className = 'field upload';
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/jpeg,image/png,image/webp,image/gif';
+  input.hidden = true;
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    status('画像を送っています…');
+    let blob;
+    try {
+      blob = await imageForUpload(file);
+    } catch {
+      status('この画像は使えません。JPEG・PNG・WebP・GIF の画像を選んでください', 'error');
+      return;
+    }
+    if (blob.size > IMAGE_MAX) {
+      status('画像が大きすぎます（2.5MB まで）。小さくしてから選んでください', 'error');
+      return;
+    }
+    const res = await postJson('../api/media', { data: await base64Of(blob) });
+    if (!res.ok) {
+      const why = { 'not-image': 'この画像は使えません。JPEG・PNG・WebP・GIF の画像を選んでください', 'too-large': '画像が大きすぎます（2.5MB まで）' }[res.reason];
+      status(serverMessage(res, why ?? '画像を送れませんでした。もう一度選んでください'), 'error');
+      return;
+    }
+    apply((doc) => sf.edit.setProp(doc, path, 'src', res.src), path);
+    status('画像を入れました。説明（alt）も書いてください', 'ok');
+  });
+  wrap.append(button('画像を選ぶ…', () => input.click()), input);
+  return wrap;
 }
 
 // Shown when an answer did not come from the API (requirements §3.3: a WAF on rental servers).
@@ -1434,24 +1543,36 @@ const readable = (source) => {
 // the sample. Otherwise it lives in this browser, starting from what the earlier prototype
 // kept, else the sample.
 const ping = await fetch('../api/ping', { cache: 'no-store' }).then((r) => r.json()).catch(() => null);
-// Behind a front, the published site is served on its own origin and the API says where (server.md §6).
-const SITE_URL = typeof ping?.siteUrl === 'string' && /^https?:\/\//.test(ping.siteUrl) ? ping.siteUrl : '../site/';
-$('view-site').href = SITE_URL;
 if (ping?.wge === 1 && ping.ok === false) {
   // The front refused (signed out, or the server behind it is down): never fall back to this browser's copy.
   status(serverMessage(ping, 'サーバーが編集を受け付けませんでした'), 'error');
   throw new Error('the save API refused the editor');
 }
+// With a blog, "top" is the contents page the server makes: the list of posts opens instead.
+if (ping?.wge === 1 && ping.blog === true && pageId === 'top') {
+  location.replace('posts.html');
+  await new Promise(() => {});
+}
+// Behind a front, the published site is served on its own origin and the API says where (server.md §6).
+const SITE_ROOT = typeof ping?.siteUrl === 'string' && /^https?:\/\//.test(ping.siteUrl) ? ping.siteUrl.replace(/\/?$/, '/') : '../site/';
+const SITE_URL = pageId === 'top' ? SITE_ROOT : `${SITE_ROOT}${pageId}/`;
+$('view-site').href = SITE_URL;
 let page;
 if (ping?.wge === 1) {
   try {
-    const remote = createHttpStore('../api', 'top');
+    const remote = createHttpStore('../api', pageId);
     page = await remote.load(sample);
     store = remote;
     serverMode = true;
   } catch (e) {
     status(`サーバーの保存先を開けなかったため、このブラウザの中に保存します（${e.reason ?? e.message}）`, 'error');
   }
+}
+if (serverMode) {
+  $('posts-link').hidden = false;
+  // "サンプルに戻す" is for trying the editor alone; on the server it would replace a real page.
+  $('reset').hidden = true;
+  if (page.meta) showMeta(page.meta);
 }
 if (!page) {
   const legacy = storage.getItem(LEGACY_KEY);

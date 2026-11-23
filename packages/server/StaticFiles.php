@@ -16,6 +16,10 @@ final class StaticFiles
         'json' => 'application/json; charset=utf-8',
         'txt' => 'text/plain; charset=utf-8',
         'svg' => 'image/svg+xml',
+        'jpg' => 'image/jpeg',
+        'png' => 'image/png',
+        'gif' => 'image/gif',
+        'webp' => 'image/webp',
     ];
 
     // $root/$relative ("" or a path ending in "/" means its index.html) as [type, content], or null.

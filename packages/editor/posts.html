@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>記事の一覧 – WebGenEngine</title>
+<link rel="stylesheet" href="editor.css">
+</head>
+<body class="posts-body">
+<header class="toolbar">
+  <strong class="brand">WebGenEngine</strong>
+  <span class="page-name" id="site-name">記事の一覧</span>
+  <div class="group end">
+    <a id="view-site" class="link" href="../site/" target="_blank" rel="noopener" hidden>サイトを見る</a>
+  </div>
+</header>
+<main class="posts" id="posts">
+  <form class="new-post" id="new-post">
+    <h1>新しい記事</h1>
+    <div class="new-post-row">
+      <label for="new-title">題名</label>
+      <input id="new-title" name="title" maxlength="120" required autocomplete="off">
+      <label for="new-date">日付</label>
+      <input id="new-date" name="date" type="date" required>
+      <button type="submit" class="primary" id="create">書き始める</button>
+    </div>
+  </form>
+  <p class="posts-status" id="status" role="status" aria-live="polite"></p>
+  <section aria-labelledby="list-title">
+    <h2 id="list-title">記事</h2>
+    <ul class="post-list" id="post-list"></ul>
+  </section>
+</main>
+<script type="module" src="posts.mjs"></script>
+</body>
+</html>

@@ -15,9 +15,11 @@ require __DIR__ . '/../source/php/SourceFormat.php';
 require __DIR__ . '/../source/php/Renderer.php';
 require __DIR__ . '/PageStore.php';
 require __DIR__ . '/Api.php';
+require __DIR__ . '/Blog.php';
 require __DIR__ . '/StaticFiles.php';
 
 use WebGenEngine\Server\Api;
+use WebGenEngine\Server\Blog;
 use WebGenEngine\Server\PageStore;
 use WebGenEngine\Server\StaticFiles;
 use WebGenEngine\Source\Renderer;
@@ -40,12 +42,17 @@ if (str_starts_with($path, '/api/')) {
     $db = PageStore::openDatabase('sqlite:' . $data . '/wge.sqlite');
     // The port the browser uses, which differs from the container's (run-dev.sh sets it).
     $port = getenv('WGE_PORT') ?: '8766';
+    $format = SourceFormat::fromSchemaFile($packages . '/source/schema.json');
+    $renderer = Renderer::fromFiles($packages . '/source');
+    // WGE_BLOG_TITLE makes the site a blog, as with trusted-front.php (blog.md).
+    $blogTitle = trim((string) getenv('WGE_BLOG_TITLE'));
     $api = new Api(
         $db,
         $site,
-        SourceFormat::fromSchemaFile($packages . '/source/schema.json'),
-        Renderer::fromFiles($packages . '/source'),
+        $format,
+        $renderer,
         hosts: ["127.0.0.1:{$port}", "localhost:{$port}"],
+        blog: $blogTitle === '' ? null : new Blog($blogTitle, $format, $renderer),
     );
     $headers = array_change_key_case(function_exists('getallheaders') ? getallheaders() : [], CASE_LOWER);
     [$status, $body] = $api->handle($_SERVER['REQUEST_METHOD'], $path, (string) file_get_contents('php://input'), $headers);
@@ -63,6 +70,12 @@ if (preg_match('#^/site/(.*)$#D', $path, $m) === 1) {
     } else {
         StaticFiles::send($site, $m[1]);
     }
+    return true;
+}
+
+// Images saved from the editor (../media/… from the editor and from pages one folder down).
+if (preg_match('#^/(?:site/)?media/([0-9a-f]{16}\.(?:jpg|png|gif|webp))$#D', $path, $m) === 1) {
+    StaticFiles::send($site . '/media', $m[1]);
     return true;
 }
 

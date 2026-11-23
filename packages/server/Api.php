@@ -2,7 +2,8 @@
 // The save API: JSON over HTTP in front of PageStore, plus writing the public page when
 // a version goes live. Publishing writes static HTML and CSS, so the public site runs no
 // PHP (R6). handle() takes the request as plain values and returns [status, body], so
-// the tests call it without a web server. Spec: docs/design/server.md.
+// the tests call it without a web server. Spec: docs/design/server.md, and for the list of
+// pages, titles, images and the blog's contents page docs/design/blog.md.
 
 declare(strict_types=1);
 
@@ -18,6 +19,9 @@ final class Api
 {
     private const PAGE_ID = '[a-z0-9][a-z0-9-]{0,63}';
     private const MAX_SOURCE = 2_000_000;
+    private const MAX_TITLE = 120;
+    /** An image's bytes at most; the editor makes photos smaller before it sends them. */
+    public const MAX_IMAGE = 2_500_000;
     private const TITLES = ['top' => 'トップページ'];
 
     public function __construct(
@@ -30,6 +34,8 @@ final class Api
         private readonly ?array $hosts = null,
         /** Where the published site is seen, when it is not under ../site/ (Front.php, server.md §6) */
         private readonly ?string $siteUrl = null,
+        /** With a blog, "top" is its contents page, made from the published posts (blog.md) */
+        private readonly ?Blog $blog = null,
     ) {
     }
 
@@ -57,12 +63,26 @@ final class Api
             return self::reply(403, ['ok' => false, 'reason' => 'forbidden']);
         }
         if ($method === 'GET' && $path === '/api/ping') {
-            return self::reply(200, ['ok' => true] + ($this->siteUrl !== null ? ['siteUrl' => $this->siteUrl] : []));
+            return self::reply(200, ['ok' => true] + ($this->siteUrl !== null ? ['siteUrl' => $this->siteUrl] : []) + ($this->blog !== null ? ['blog' => true, 'blogTitle' => $this->blog->title()] : []));
+        }
+        if ($method === 'GET' && $path === '/api/pages') {
+            return self::reply(200, ['ok' => true, 'pages' => $this->listPages(false)]);
+        }
+        if ($path === '/api/media') {
+            if ($method !== 'POST') {
+                return self::reply(405, ['ok' => false, 'reason' => 'method']);
+            }
+            [$problem, $input] = self::postInput($body, $headers);
+            return $problem ?? $this->saveImage($input);
         }
         if (preg_match('#^/api/pages/(' . self::PAGE_ID . ')/([a-z-]+)(?:/(\d{1,9}))?$#D', $path, $m) !== 1) {
             return self::reply(404, ['ok' => false, 'reason' => 'not-found']);
         }
         [, $pageId, $action] = $m;
+        // With a blog, its contents page is made from the posts and never edited.
+        if ($this->blog !== null && $pageId === 'top') {
+            return self::reply(404, ['ok' => false, 'reason' => 'not-found']);
+        }
         $versionId = isset($m[3]) ? (int) $m[3] : null;
         $store = new PageStore($this->db, $pageId, $this->now);
 
@@ -81,15 +101,9 @@ final class Api
         if ($method !== 'POST' || $versionId !== null) {
             return self::reply(405, ['ok' => false, 'reason' => 'method']);
         }
-        // A page on another site can send a plain form POST here, but not one with a
-        // custom header or a JSON content type: those need a CORS preflight, which this
-        // API never answers.
-        if (($headers['x-wge-request'] ?? '') !== '1' || !str_starts_with($headers['content-type'] ?? '', 'application/json')) {
-            return self::reply(403, ['ok' => false, 'reason' => 'forbidden']);
-        }
-        $input = json_decode($body, true);
-        if (!is_array($input)) {
-            return self::reply(400, ['ok' => false, 'reason' => 'bad-request']);
+        [$problem, $input] = self::postInput($body, $headers);
+        if ($problem !== null) {
+            return $problem;
         }
 
         switch ($action) {
@@ -98,7 +112,16 @@ final class Api
                 if (($problem = $this->checkSource($source)) !== null) {
                     return $problem;
                 }
-                return self::reply(200, ['ok' => true] + $store->load($source));
+                // A new page may come with its title and date (a new blog post).
+                $meta = $input['meta'] ?? null;
+                if ($meta !== null && ($problem = self::checkMeta($meta)) !== null) {
+                    return $problem;
+                }
+                $state = $store->load($source);
+                if ($meta !== null && $this->metaOf($pageId) === null) {
+                    $this->setMeta($pageId, $meta['title'], $meta['date']);
+                }
+                return self::reply(200, ['ok' => true] + $state + ['meta' => $this->metaOf($pageId)]);
             case 'draft':
                 $source = $input['source'] ?? null;
                 $base = $input['baseRevision'] ?? null;
@@ -109,6 +132,17 @@ final class Api
                     return $problem;
                 }
                 return $this->result($store->saveDraft($source, $base));
+            case 'meta':
+                if (($problem = self::checkMeta($input)) !== null) {
+                    return $problem;
+                }
+                $published = $store->publishedSource();
+                $this->setMeta($pageId, $input['title'], $input['date']);
+                if ($published !== null) {
+                    $this->writeSite($pageId, $published);
+                }
+                $this->writeBlog();
+                return self::reply(200, ['ok' => true, 'meta' => $this->metaOf($pageId)]);
             case 'publish':
                 $revision = $input['revision'] ?? null;
                 if (!is_int($revision)) {
@@ -117,6 +151,7 @@ final class Api
                 $result = $store->publish($revision);
                 if ($result['ok']) {
                     $this->writeSite($pageId, $store->publishedSource());
+                    $this->writeBlog();
                 }
                 return $this->result($result);
             case 'undo-publish':
@@ -127,10 +162,25 @@ final class Api
                 $result = $store->undoPublish($id);
                 if ($result['ok']) {
                     $this->writeSite($pageId, $store->publishedSource());
+                    $this->writeBlog();
                 }
                 return $this->result($result);
         }
         return self::reply(404, ['ok' => false, 'reason' => 'not-found']);
+    }
+
+    // A page on another site can send a plain form POST here, but not one with a custom header
+    // or a JSON content type: those need a CORS preflight, which this API never answers.
+    private static function postInput(string $body, array $headers): array
+    {
+        if (($headers['x-wge-request'] ?? '') !== '1' || !str_starts_with($headers['content-type'] ?? '', 'application/json')) {
+            return [self::reply(403, ['ok' => false, 'reason' => 'forbidden']), null];
+        }
+        $input = json_decode($body, true);
+        if (!is_array($input)) {
+            return [self::reply(400, ['ok' => false, 'reason' => 'bad-request']), null];
+        }
+        return [null, $input];
     }
 
     private function result(array $result): array
@@ -152,6 +202,105 @@ final class Api
         return null;
     }
 
+    // A title of one line (1–120 characters) and a real date written YYYY-MM-DD.
+    private static function checkMeta(mixed $meta): ?array
+    {
+        $title = is_array($meta) ? ($meta['title'] ?? null) : null;
+        $date = is_array($meta) ? ($meta['date'] ?? null) : null;
+        if (!is_string($title) || !mb_check_encoding($title, 'UTF-8') || trim($title) === '' || mb_strlen($title) > self::MAX_TITLE || preg_match('/[\x00-\x1f\x7f]/', $title) === 1) {
+            return self::reply(422, ['ok' => false, 'reason' => 'invalid-title']);
+        }
+        if (!is_string($date) || preg_match('/^(\d{4})-(\d{2})-(\d{2})$/D', $date, $d) !== 1 || !checkdate((int) $d[2], (int) $d[3], (int) $d[1])) {
+            return self::reply(422, ['ok' => false, 'reason' => 'invalid-date']);
+        }
+        return null;
+    }
+
+    /** @return array{title: string, date: string}|null */
+    private function metaOf(string $pageId): ?array
+    {
+        $q = $this->db->prepare('SELECT title, date FROM page_meta WHERE id = ?');
+        $q->execute([$pageId]);
+        $row = $q->fetch(PDO::FETCH_ASSOC);
+        return $row === false ? null : ['title' => (string) $row['title'], 'date' => (string) $row['date']];
+    }
+
+    private function setMeta(string $pageId, string $title, string $date): void
+    {
+        $this->db->prepare('INSERT INTO page_meta (id, title, date) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET title = excluded.title, date = excluded.date')
+            ->execute([$pageId, trim($title), $date]);
+    }
+
+    /**
+     * The pages, newest date first (pages without a date last, by id).
+     *
+     * @return list<array{id: string, title: string, date: string|null, published: bool, savedAt: int|null}>
+     */
+    private function listPages(bool $publishedOnly): array
+    {
+        $rows = $this->db->query('SELECT p.id, p.published, p.draft_saved_at, m.title, m.date FROM pages p LEFT JOIN page_meta m ON m.id = p.id')->fetchAll(PDO::FETCH_ASSOC);
+        $pages = [];
+        foreach ($rows as $r) {
+            if (($this->blog !== null && $r['id'] === 'top') || ($publishedOnly && $r['published'] === null)) {
+                continue;
+            }
+            $pages[] = [
+                'id' => (string) $r['id'],
+                'title' => $r['title'] !== null ? (string) $r['title'] : (self::TITLES[$r['id']] ?? (string) $r['id']),
+                'date' => $r['date'] !== null ? (string) $r['date'] : null,
+                'published' => $r['published'] !== null,
+                'savedAt' => $r['draft_saved_at'] !== null ? (int) $r['draft_saved_at'] : null,
+            ];
+        }
+        usort($pages, static fn (array $a, array $b): int => [$b['date'] ?? '', $b['id']] <=> [$a['date'] ?? '', $a['id']]);
+        return $pages;
+    }
+
+    // An image for the pages (JPEG, PNG, GIF or WebP, told by its bytes; never SVG, which can carry
+    // script). Named by its content, so the same image is kept once. Pages one folder down (blog
+    // posts, and the editor's preview) reach it as ../media/<name>.
+    private function saveImage(array $input): array
+    {
+        $data = $input['data'] ?? null;
+        if (!is_string($data) || strlen($data) > intdiv(self::MAX_IMAGE * 4, 3) + 8) {
+            return self::reply(413, ['ok' => false, 'reason' => 'too-large']);
+        }
+        $bytes = base64_decode($data, true);
+        if ($bytes === false || $bytes === '') {
+            return self::reply(400, ['ok' => false, 'reason' => 'bad-request']);
+        }
+        if (strlen($bytes) > self::MAX_IMAGE) {
+            return self::reply(413, ['ok' => false, 'reason' => 'too-large']);
+        }
+        $ext = self::imageType($bytes);
+        if ($ext === null) {
+            return self::reply(415, ['ok' => false, 'reason' => 'not-image']);
+        }
+        $name = substr(hash('sha256', $bytes), 0, 16) . '.' . $ext;
+        $file = $this->siteDir . '/media/' . $name;
+        if (!is_file($file)) {
+            self::writeAtomically($file, $bytes);
+        }
+        return self::reply(200, ['ok' => true, 'src' => '../media/' . $name]);
+    }
+
+    public static function imageType(string $bytes): ?string
+    {
+        if (str_starts_with($bytes, "\xFF\xD8\xFF")) {
+            return 'jpg';
+        }
+        if (str_starts_with($bytes, "\x89PNG\r\n\x1A\n")) {
+            return 'png';
+        }
+        if (str_starts_with($bytes, 'GIF87a') || str_starts_with($bytes, 'GIF89a')) {
+            return 'gif';
+        }
+        if (strlen($bytes) >= 12 && str_starts_with($bytes, 'RIFF') && substr($bytes, 8, 4) === 'WEBP') {
+            return 'webp';
+        }
+        return null;
+    }
+
     // Writes the public page for $pageId, or removes it when nothing is published.
     // Each file is written to a temporary name and renamed, so a reader never sees half a page.
     private function writeSite(string $pageId, ?string $source): void
@@ -163,8 +312,9 @@ final class Api
             }
             return;
         }
+        $title = $this->metaOf($pageId)['title'] ?? (self::TITLES[$pageId] ?? $pageId);
         try {
-            $html = $this->renderer->renderPage($this->format->parse($source), self::TITLES[$pageId] ?? $pageId, 'ja', $pageId === 'top' ? 'style.css' : '../style.css');
+            $html = $this->renderer->renderPage($this->format->parse($source), $title, 'ja', $pageId === 'top' ? 'style.css' : '../style.css');
         } catch (SourceError | RenderError $e) {
             // Drafts are checked on save, so this is a bug; the published version stays recorded.
             error_log('wge: cannot render ' . $pageId . ': ' . $e->getMessage());
@@ -172,6 +322,34 @@ final class Api
         }
         self::writeAtomically($this->siteDir . '/style.css', $this->renderer->stylesheet());
         self::writeAtomically($file, $html);
+    }
+
+    // The blog's contents page and feed, from the published posts (blog.md).
+    private function writeBlog(): void
+    {
+        if ($this->blog === null) {
+            return;
+        }
+        $posts = array_map(
+            static fn (array $p): array => ['id' => $p['id'], 'title' => $p['title'], 'date' => $p['date'] ?? '1970-01-01'],
+            $this->listPages(true),
+        );
+        try {
+            $files = $this->blog->files($posts);
+        } catch (SourceError | RenderError $e) {
+            error_log('wge: cannot render the blog contents: ' . $e->getMessage());
+            return;
+        }
+        self::writeAtomically($this->siteDir . '/style.css', $this->renderer->stylesheet());
+        foreach ($files as $name => $content) {
+            if ($content === null) {
+                if (is_file($this->siteDir . '/' . $name)) {
+                    unlink($this->siteDir . '/' . $name);
+                }
+            } else {
+                self::writeAtomically($this->siteDir . '/' . $name, $content);
+            }
+        }
     }
 
     private static function writeAtomically(string $file, string $content): void

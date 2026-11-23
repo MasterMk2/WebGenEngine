@@ -50,6 +50,12 @@ final class PageStore
             previous INTEGER,
             PRIMARY KEY (page, id)
         )');
+        // A page's title and date (a blog post's). Kept apart from the store's own rules (fixtures/store.json).
+        $db->exec('CREATE TABLE IF NOT EXISTS page_meta (
+            id TEXT PRIMARY KEY REFERENCES pages(id),
+            title TEXT NOT NULL,
+            date TEXT NOT NULL
+        )');
         return $db;
     }
 
