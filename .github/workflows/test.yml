@@ -39,3 +39,5 @@ jobs:
         run: php -d error_reporting=-1 -d display_errors=1 packages/source/php/run-fixtures.php
       - name: Save API tests
         run: php -d error_reporting=-1 -d display_errors=1 packages/server/test.php
+      - name: Entries parse
+        run: php -l packages/server/trusted-front.php && php -l packages/server/router.php

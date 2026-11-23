@@ -1,0 +1,42 @@
+{
+  "comment": "Made with the signing code of a front that uses this contract (svc-auth/v1). The key is a fixed test value, not a secret.",
+  "keyHex": "891b9dc7df77068e925db72870d26f36e07106410415ed3f7a7162d072b8f6e5",
+  "cases": [
+    {
+      "name": "save a draft (JSON body with Japanese text)",
+      "client": "front-app",
+      "method": "POST",
+      "path": "/api/pages/top/draft",
+      "timestamp": "1795431331287",
+      "nonce": "Qm9vbS1SZWJvcm4tMjAyNi0xMQ",
+      "actor": "21000002",
+      "body": "{\"source\":\"<Heading level=\\\"1\\\">医学薬学祭</Heading>\\n\",\"baseRevision\":3}",
+      "canonical": "svc-auth/v1\nfront-app\nPOST\n/api/pages/top/draft\n1795431331287\nQm9vbS1SZWJvcm4tMjAyNi0xMQ\n21000002\n76810194edc1588b59f2381c268b23b99dd977db6ebbc70770bddaff84bf9337",
+      "signature": "3cf2b8813afd3ccf0475beb0d663b79153ebc460d3a91a182e1f3205bd980281"
+    },
+    {
+      "name": "open the editor (no body)",
+      "client": "front-app",
+      "method": "GET",
+      "path": "/editor/",
+      "timestamp": "1795431331300",
+      "nonce": "c2l0ZS1lZGl0b3Itb3Blbi0wMQ",
+      "actor": "21000002",
+      "body": "",
+      "canonical": "svc-auth/v1\nfront-app\nGET\n/editor/\n1795431331300\nc2l0ZS1lZGl0b3Itb3Blbi0wMQ\n21000002\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "signature": "cbca22b46447dc6d8236843f18e3c3ce50c3054bc502d032943324c4095a90ad"
+    },
+    {
+      "name": "ping without an actor",
+      "client": "front-app",
+      "method": "get",
+      "path": "/api/ping",
+      "timestamp": "1795431331400",
+      "nonce": "cGluZy13aXRob3V0LWFjdG9yLTAx",
+      "actor": "",
+      "body": "",
+      "canonical": "svc-auth/v1\nfront-app\nGET\n/api/ping\n1795431331400\ncGluZy13aXRob3V0LWFjdG9yLTAx\n\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "signature": "e3d3d1cc1e1bd0797eeb89da7b1806081f64f3aa97c05d12ed91a0cbb0d14128"
+    }
+  ]
+}

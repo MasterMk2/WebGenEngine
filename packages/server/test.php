@@ -9,9 +9,14 @@ require __DIR__ . '/../source/php/SourceFormat.php';
 require __DIR__ . '/../source/php/Renderer.php';
 require __DIR__ . '/PageStore.php';
 require __DIR__ . '/Api.php';
+require __DIR__ . '/StaticFiles.php';
+require __DIR__ . '/SvcAuth.php';
+require __DIR__ . '/Front.php';
 
 use WebGenEngine\Server\Api;
+use WebGenEngine\Server\Front;
 use WebGenEngine\Server\PageStore;
+use WebGenEngine\Server\SvcAuth;
 use WebGenEngine\Source\Renderer;
 use WebGenEngine\Source\SourceFormat;
 
@@ -166,6 +171,104 @@ array_map('unlink', glob($site . '/*/*') ?: []);
 array_map('rmdir', glob($site . '/*', GLOB_ONLYDIR) ?: []);
 array_map('unlink', glob($site . '/*') ?: []);
 rmdir($site);
+
+// ------------------------------------------------------- part 3: requests signed by a trusted front
+
+$vectors = json_decode((string) file_get_contents(__DIR__ . '/fixtures/svc-auth.json'), true, 512, JSON_THROW_ON_ERROR);
+$key = (string) hex2bin($vectors['keyHex']);
+foreach ($vectors['cases'] as $c) {
+    check(SvcAuth::canonical($c['client'], $c['method'], $c['path'], $c['timestamp'], $c['nonce'], $c['actor'], $c['body']) === $c['canonical'], "svc-auth canonical string as the front makes it: {$c['name']}");
+    check(SvcAuth::sign($key, $c['client'], $c['method'], $c['path'], $c['timestamp'], $c['nonce'], $c['actor'], $c['body']) === $c['signature'], "svc-auth signature as the front makes it: {$c['name']}");
+}
+
+check(SvcAuth::parseKey($vectors['keyHex']) === $key, 'a hex key is read');
+check(SvcAuth::parseKey(rtrim(strtr(base64_encode($key), '+/', '-_'), '=') . "\n") === $key, 'a base64url key is read');
+check(SvcAuth::parseKey(bin2hex(random_bytes(16))) === null, 'a key under 32 bytes is refused');
+check(SvcAuth::parseKey(str_repeat('ab', 32)) === null, 'a key of one repeated byte is refused');
+check(SvcAuth::parseKey('not a key!') === null, 'text that is neither hex nor base64 is refused');
+
+$clock = 1_795_431_331_287;
+$authDb = PageStore::openDatabase('sqlite::memory:');
+$auth = new SvcAuth($key, 'front-app', $authDb, static function () use (&$clock): int {
+    return $clock;
+});
+$signed = static function (string $method, string $path, string $body, string $actor = '21000002', array $change = []) use ($key, &$clock): array {
+    $h = ['x-svc-client' => 'front-app', 'x-svc-timestamp' => (string) $clock, 'x-svc-nonce' => rtrim(strtr(base64_encode(random_bytes(18)), '+/', '-_'), '='), 'x-svc-actor' => $actor];
+    $h['x-svc-signature'] = SvcAuth::sign($key, $h['x-svc-client'], $method, $path, $h['x-svc-timestamp'], $h['x-svc-nonce'], $actor, $body);
+    if ($actor === '') {
+        unset($h['x-svc-actor']);
+    }
+    return $change + $h;
+};
+
+$first = $vectors['cases'][0];
+$fromVector = ['x-svc-client' => $first['client'], 'x-svc-timestamp' => $first['timestamp'], 'x-svc-nonce' => $first['nonce'], 'x-svc-actor' => $first['actor'], 'x-svc-signature' => $first['signature']];
+$result = $auth->verify($first['method'], $first['path'], $first['body'], $fromVector);
+check($result === ['ok' => true, 'actor' => '21000002'], 'a request signed by the front is accepted with its actor');
+check(($auth->verify($first['method'], $first['path'], $first['body'], $fromVector)['reason'] ?? null) === 'replay', 'the same nonce is refused the second time');
+$h = $signed('GET', '/api/ping', '', '');
+check($auth->verify('GET', '/api/ping', '', $h) === ['ok' => true, 'actor' => ''], 'a request without an actor is accepted');
+$h = $signed('POST', '/api/pages/top/draft', '{"a":1}');
+check(($auth->verify('POST', '/api/pages/top/draft', '{"a":2}', $h)['reason'] ?? '') === 'signature', 'a changed body is refused');
+check(($auth->verify('POST', '/api/pages/top/publish', '{"a":1}', $h)['reason'] ?? '') === 'signature', 'a changed path is refused');
+check(($auth->verify('GET', '/api/pages/top/draft', '{"a":1}', $h)['reason'] ?? '') === 'signature', 'a changed method is refused');
+check(($auth->verify('POST', '/api/pages/top/draft', '{"a":1}', ['x-svc-actor' => 'someone-else'] + $h)['reason'] ?? '') === 'signature', 'a changed actor is refused');
+check(($auth->verify('POST', '/api/pages/top/draft', '{"a":1}', $h)['ok'] ?? false) === true, 'a refused request does not use up its nonce');
+check(($auth->verify('GET', '/api/ping', '', $signed('GET', '/api/ping', '', '21000002', ['x-svc-client' => 'other-app']))['reason'] ?? '') === 'client', 'another client ID is refused');
+$h = $signed('GET', '/api/ping', '');
+$clock += 30_001;
+check(($auth->verify('GET', '/api/ping', '', $h)['reason'] ?? '') === 'timestamp', 'a request more than 30 s old is refused');
+$clock -= 60_002;
+check(($auth->verify('GET', '/api/ping', '', $h)['reason'] ?? '') === 'timestamp', 'a request more than 30 s ahead is refused');
+$clock += 30_001;
+check(($auth->verify('GET', '/api/ping', '', ['x-svc-signature' => strtoupper($h['x-svc-signature'])] + $h)['reason'] ?? '') === 'signature', 'only a lower-case hex signature is read');
+check(($auth->verify('GET', '/api/ping', '', [])['reason'] ?? '') === 'client', 'an unsigned request is refused');
+
+// ------------------------------------------------------- part 4: the editor behind the front
+
+$site = sys_get_temp_dir() . '/wge-test-front-' . bin2hex(random_bytes(4));
+$audit = $site . '-audit.jsonl';
+$frontDb = PageStore::openDatabase('sqlite::memory:');
+$front = new Front(
+    new SvcAuth($key, 'front-app', $frontDb, static function () use (&$clock): int {
+        return $clock;
+    }),
+    new Api($frontDb, $site, SourceFormat::fromSchemaFile($packages . '/source/schema.json'), Renderer::fromFiles($packages . '/source'), siteUrl: 'https://site.example/wge/'),
+    $packages,
+    $site,
+    $audit,
+    static function () use (&$clock): int {
+        return $clock;
+    },
+);
+$call = static function (string $method, string $path, string $body = '', array $extra = []) use ($front, $signed): array {
+    return $front->handle($method, $path, $body, $extra + $signed($method, $path, $body));
+};
+
+[$status, , $out] = $front->handle('GET', '/editor/', '', []);
+check($status === 403 && json_decode($out, true) === ['wge' => 1, 'ok' => false, 'reason' => 'forbidden'], 'the front entry refuses an unsigned request');
+[$status, $headers, $out] = $call('GET', '/editor/');
+check($status === 200 && str_starts_with($headers['Content-Type'], 'text/html') && str_contains($out, 'editor.mjs'), 'a signed request opens the editor');
+[$status, $headers] = $call('GET', '/source/js/render.mjs');
+check($status === 200 && str_starts_with($headers['Content-Type'], 'text/javascript'), 'the source packages are served for the editor');
+foreach (['/server/Api.php', '/source/php/Renderer.php', '/editor/../server/Api.php', '/editor/editor.mjs?x=1', '/editor/%2e%2e/server/Api.php', '/site/index.html', '/'] as $path) {
+    [$status] = $call('GET', $path);
+    check($status === 404, "the front entry serves nothing else: {$path}");
+}
+[$status, , $out] = $call('GET', '/api/ping');
+check($status === 200 && json_decode($out, true) === ['wge' => 1, 'ok' => true, 'siteUrl' => 'https://site.example/wge/'], 'ping says where the published site is seen');
+$json = ['x-wge-request' => '1', 'content-type' => 'application/json'];
+[$status] = $call('POST', '/api/pages/top/load', json_encode(['initialSource' => $page]), $json);
+[$status, , $out] = $call('POST', '/api/pages/top/publish', json_encode(['revision' => 0]), $json);
+check($status === 200 && is_file($site . '/index.html') && is_file($site . '/sample/coffee.svg'), 'publish writes the page, with the sample images beside it');
+$lines = array_map(static fn (string $l) => json_decode($l, true), file($audit, FILE_IGNORE_NEW_LINES) ?: []);
+check(count($lines) === 2 && $lines[1]['actor'] === '21000002' && $lines[1]['path'] === '/api/pages/top/publish' && $lines[1]['status'] === 200, 'each change is recorded with who made it');
+
+array_map('unlink', glob($site . '/*/*') ?: []);
+array_map('rmdir', glob($site . '/*', GLOB_ONLYDIR) ?: []);
+array_map('unlink', glob($site . '/*') ?: []);
+rmdir($site);
+unlink($audit);
 
 foreach ($failures as $f) {
     echo "FAIL {$f}\n";

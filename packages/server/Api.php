@@ -28,6 +28,8 @@ final class Api
         private readonly ?\Closure $now = null,
         /** @var list<string>|null Host headers to accept, such as "127.0.0.1:8766"; null accepts any */
         private readonly ?array $hosts = null,
+        /** Where the published site is seen, when it is not under ../site/ (Front.php, server.md §6) */
+        private readonly ?string $siteUrl = null,
     ) {
     }
 
@@ -55,7 +57,7 @@ final class Api
             return self::reply(403, ['ok' => false, 'reason' => 'forbidden']);
         }
         if ($method === 'GET' && $path === '/api/ping') {
-            return self::reply(200, ['ok' => true]);
+            return self::reply(200, ['ok' => true] + ($this->siteUrl !== null ? ['siteUrl' => $this->siteUrl] : []));
         }
         if (preg_match('#^/api/pages/(' . self::PAGE_ID . ')/([a-z-]+)(?:/(\d{1,9}))?$#D', $path, $m) !== 1) {
             return self::reply(404, ['ok' => false, 'reason' => 'not-found']);
