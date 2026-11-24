@@ -62,6 +62,9 @@ small { font-size: var(--wge-font-size-sm); }
 .wge-bg-primary .wge-button:not(.wge-variant-secondary) { background: var(--wge-color-on-primary); color: var(--wge-color-primary); border-color: var(--wge-color-on-primary); }
 .wge-bg-primary .wge-variant-secondary { color: var(--wge-color-on-primary); border-color: var(--wge-color-on-primary); }
 .wge-bg-inverse .wge-variant-secondary { color: var(--wge-color-on-inverse); border-color: var(--wge-color-on-inverse); }
+/* A card or a notice has the page's background, so its buttons are drawn as on the page again. */
+:is(.wge-surface-card, .wge-surface-notice) .wge-button:not(.wge-variant-secondary) { background: var(--wge-color-primary); color: var(--wge-color-on-primary); border-color: var(--wge-color-primary); }
+:is(.wge-surface-card, .wge-surface-notice) .wge-variant-secondary { color: var(--wge-color-primary); border-color: var(--wge-color-primary); }
 
 /* :where() has no weight, so a section's width above still limits a picture placed in it. */
 .wge-image { display: block; height: auto; }
