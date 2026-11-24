@@ -97,15 +97,19 @@ final class Blog
     }
 
     // renderPage puts the page's body in <main class="wge-page"> (rendering.md §5); $before goes
-    // first in it and $after last. Both are markup made here, never a page's source.
+    // first in it and $after last. Both are markup made here, never a page's source. The page's
+    // own text comes between its first opening tag and its last closing tag, so whatever that
+    // text holds (Html is sanitized and has no <main>, but still) cannot move them.
     private static function insertIntoMain(string $page, string $before, string $after): string
     {
         $open = "<main class=\"wge-page\">\n";
-        $close = "</main>\n";
-        if (substr_count($page, $open) !== 1 || substr_count($page, $close) !== 1) {
-            throw new \LogicException('the page has no single <main class="wge-page">');
+        $start = strpos($page, $open);
+        $end = strrpos($page, "</main>\n");
+        if ($start === false || $end === false || $end < $start) {
+            return $page;
         }
-        return str_replace([$open, $close], [$open . $before, $after . $close], $page);
+        $start += strlen($open);
+        return substr($page, 0, $start) . $before . substr($page, $start, $end - $start) . $after . substr($page, $end);
     }
 
     private static function time(string $class, string $date): string
