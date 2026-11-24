@@ -72,6 +72,12 @@ export function addressOf(path) {
   return String(path).replace(/(^|\/)index\.html$/, '$1');
 }
 
+/** A link's address for a page of the site, from the site's root (site.md §3.1): publishing makes
+ *  it relative to the page that links. index.html → /, en/index.html → /en/, about.html → /about.html. */
+export function pageHref(path) {
+  return `/${addressOf(path)}`;
+}
+
 /** A new page's id from its path, not one of `taken`: index.html → top, en/index.html → en-index. */
 export function pageIdFor(path, taken = new Set()) {
   let base = path.replace(/\.html$/, '').replaceAll('/', '-').slice(0, 56).replace(/-+$/, '');

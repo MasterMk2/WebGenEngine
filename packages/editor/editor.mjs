@@ -8,7 +8,7 @@ import { slotIndex, slotGuide, nearEdge, moveArgs } from './slots.mjs';
 import { inlineFromDom } from './inline-dom.mjs';
 import { createPageStore } from './store.mjs';
 import { createHttpStore } from './http-store.mjs';
-import { addressOf, cleanPath, cleanTitle, embedSrcFrom, fitWithin, HEADER, isPart, PAGE_ID, partTemplate, postTemplate } from './posts-core.mjs';
+import { addressOf, cleanPath, cleanTitle, embedSrcFrom, fitWithin, HEADER, isPart, PAGE_ID, pageHref, partTemplate, postTemplate } from './posts-core.mjs';
 
 const fetchText = (p) => fetch(p).then((r) => {
   if (!r.ok) throw new Error(`${p}: ${r.status}`);
@@ -535,6 +535,7 @@ function startEditing(path, point, { atStart = false, selectAll = false, holdOve
 
 function stopEditing() {
   const ed = state.editing;
+  closeLinkBox(false);
   state.editing = null;
   overlay.classList.remove('editing');
   ed.el.removeAttribute('contenteditable');
@@ -595,6 +596,225 @@ function toggleWrap(tag) {
   sel.selectAllChildren(w);
   markTyping();
 }
+
+// ------------------------------------------------------- links in text
+// Words chosen while writing become a link (editor-ux.md §3.1, rendering.md §7.5). The box asks
+// for the address: typed, one of the site's pages, or a PDF sent from here. The address is
+// checked before the <a> goes in, since a refused edit would end the writing and lose it.
+
+const linkBox = $('link-box');
+let linkTarget = null;
+
+// Only blocks of words that do not exclude a link (a button is a link already).
+function linkAllowedIn(type) {
+  const comp = components.get(type);
+  return comp?.kind === 'text' && !(comp.excludes ?? []).includes('Link');
+}
+
+// The <a> the range is in, or null.
+function linkAround(range, el) {
+  let n = range.commonAncestorContainer;
+  if (n.nodeType === 3) n = n.parentNode;
+  const a = n.closest?.('a');
+  return a && el.contains(a) ? a : null;
+}
+
+// Why `href` cannot be a link in the block at `path`, or null.
+function linkProblem(path, href) {
+  if (href === '') return 'リンク先を入れてください';
+  try {
+    const probe = sf.parse(state.source);
+    sf.edit.setInline(probe, path, [{ type: 'Link', props: { href }, children: [{ type: 'text', value: 'x' }] }]);
+    return null;
+  } catch (e) {
+    if (e.code === 'E_UNSAFE_URL') return 'この形式のリンクは使えません。使えるのは https:// などで始まるアドレス、/ で始まるこのサイトのページ、mailto:、tel: です';
+    if (e.code === 'E_INVALID_VALUE') return 'リンク先に空白は使えません';
+    return describeError(e);
+  }
+}
+
+function openLinkBox() {
+  const ed = state.editing;
+  if (!ed) {
+    status('リンクにする文字を、プレビューで選んでから押してください（Ctrl+K でも付けられます）', 'error');
+    return;
+  }
+  const node = nodeAt(state.doc, ed.path);
+  if (!linkAllowedIn(node?.type)) {
+    status(node?.type === 'Button' ? 'ボタンの文字の中にはリンクを置けません。ボタンのリンク先は、右の「リンク先」で変えます' : 'この部品の文字にはリンクを付けられません', 'error');
+    return;
+  }
+  const sel = previewDoc().getSelection();
+  if (!sel.rangeCount || !ed.el.contains(sel.getRangeAt(0).commonAncestorContainer)) return;
+  const range = sel.getRangeAt(0).cloneRange();
+  const anchor = linkAround(range, ed.el);
+  if (!anchor) {
+    if (range.collapsed) {
+      status('リンクにする文字を選んでから押してください', 'error');
+      return;
+    }
+    if (range.cloneContents().querySelector('a')) {
+      status('選んだ文字に、もうリンクが入っています。そのリンクの中を選ぶと、変えたり外したりできます', 'error');
+      return;
+    }
+  }
+  linkTarget = { range, anchor, path: ed.path };
+  fillLinkBox(anchor?.getAttribute('href') ?? '');
+  linkBox.hidden = false;
+  // Under the chosen words, or above them when there is no room below.
+  const wrap = frameWrap.getBoundingClientRect();
+  const f = $('preview').getBoundingClientRect();
+  const r = (anchor ?? range).getBoundingClientRect();
+  const w = linkBox.offsetWidth;
+  const h = linkBox.offsetHeight;
+  let top = f.top - wrap.top + r.bottom + 6;
+  if (top + h > wrap.height && f.top - wrap.top + r.top - h - 6 >= 0) top = f.top - wrap.top + r.top - h - 6;
+  const left = Math.max(4, Math.min(f.left - wrap.left + r.left, wrap.width - w - 4));
+  Object.assign(linkBox.style, { left: `${left}px`, top: `${Math.max(4, top)}px` });
+  const input = $('link-href');
+  input.focus();
+  input.select();
+}
+
+// `restore` puts the caret back on the chosen words, as when the box is left with Esc.
+function closeLinkBox(restore) {
+  if (linkBox.hidden) return;
+  linkBox.hidden = true;
+  const target = linkTarget;
+  linkTarget = null;
+  const ed = state.editing;
+  if (restore && ed && target) {
+    ed.el.focus({ preventScroll: true });
+    const sel = previewDoc().getSelection();
+    sel.removeAllRanges();
+    sel.addRange(target.range);
+  }
+}
+
+function fillLinkBox(href) {
+  const existing = Boolean(linkTarget.anchor);
+  const label = document.createElement('label');
+  label.htmlFor = 'link-href';
+  label.textContent = 'リンク先';
+  const input = document.createElement('input');
+  Object.assign(input, { id: 'link-href', type: 'text', value: href, autocomplete: 'off', spellcheck: false });
+  input.setAttribute('inputmode', 'url');
+  const hint = document.createElement('p');
+  hint.className = 'note';
+  hint.textContent = siteMode ? 'https:// で始まるアドレスか、このサイトのページ（入れると候補が出ます）。メールは mailto:、電話は tel: で始めます' : 'https:// で始まるアドレス。メールは mailto:、電話は tel: で始めます';
+  const problem = document.createElement('p');
+  problem.className = 'problem';
+  problem.setAttribute('role', 'alert');
+  problem.hidden = true;
+  const actions = document.createElement('div');
+  actions.className = 'link-actions';
+  const ok = button(existing ? 'リンク先を変える' : 'リンクにする', () => applyLink(input.value.trim(), problem), 'primary');
+  actions.append(ok);
+  if (serverMode) {
+    const file = document.createElement('input');
+    Object.assign(file, { type: 'file', accept: 'application/pdf,.pdf', hidden: true });
+    file.addEventListener('change', async () => {
+      const chosen = file.files?.[0];
+      file.value = '';
+      if (!chosen) return;
+      const res = await sendPdf(chosen);
+      if (!res) return;
+      input.value = res.src;
+      status('PDF を送りました。「' + ok.textContent + '」で付けます', 'ok');
+      input.focus();
+    });
+    actions.append(button('PDF を選ぶ…', () => file.click()), file);
+  }
+  if (existing) actions.append(button('リンクを外す', removeLink));
+  actions.append(button('やめる', () => closeLinkBox(true)));
+  linkBox.replaceChildren(label, input, hint, problem, actions);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) {
+      e.preventDefault();
+      applyLink(input.value.trim(), problem);
+    }
+  });
+  if (siteMode) fillPageChoices(input);
+}
+
+// The site's pages as choices for the address (the header and footer are not pages to open).
+async function fillPageChoices(input) {
+  const res = await fetch('../api/pages', { cache: 'no-store' }).then((r) => r.json()).catch(() => null);
+  if (!res?.ok || !Array.isArray(res.pages) || linkBox.hidden) return;
+  const list = document.createElement('datalist');
+  list.id = 'link-pages';
+  for (const p of res.pages) {
+    if (isPart(p.id) || typeof p.path !== 'string') continue;
+    const o = document.createElement('option');
+    o.value = pageHref(p.path);
+    o.label = p.title || p.path;
+    list.append(o);
+  }
+  linkBox.append(list);
+  input.setAttribute('list', 'link-pages');
+}
+
+function applyLink(href, problem) {
+  const ed = state.editing;
+  const target = linkTarget;
+  if (!ed || !target || JSON.stringify(ed.path) !== JSON.stringify(target.path)) {
+    closeLinkBox(false);
+    return;
+  }
+  const why = linkProblem(ed.path, href);
+  if (why) {
+    problem.textContent = why;
+    problem.hidden = false;
+    $('link-href').focus();
+    return;
+  }
+  const d = previewDoc();
+  let a = target.anchor;
+  if (a) {
+    a.setAttribute('href', href);
+  } else {
+    a = d.createElement('a');
+    a.setAttribute('href', href);
+    a.append(target.range.extractContents());
+    target.range.insertNode(a);
+  }
+  markTyping();
+  // The caret goes after the link, so typing goes on outside it.
+  const after = d.createRange();
+  after.setStartAfter(a);
+  after.collapse(true);
+  target.range = after;
+  closeLinkBox(true);
+  status(target.anchor ? 'リンク先を変えました' : 'リンクを付けました', 'ok');
+}
+
+function removeLink() {
+  const target = linkTarget;
+  if (!state.editing || !target?.anchor) return;
+  const d = previewDoc();
+  const range = d.createRange();
+  range.setStartBefore(target.anchor);
+  range.setEndAfter(target.anchor);
+  const kids = [...target.anchor.childNodes];
+  target.anchor.replaceWith(...kids);
+  if (kids.length > 0) {
+    range.setStartBefore(kids[0]);
+    range.setEndAfter(kids.at(-1));
+  }
+  target.range = range;
+  markTyping();
+  closeLinkBox(true);
+  status('リンクを外しました', 'ok');
+}
+
+linkBox.addEventListener('keydown', (e) => {
+  // Keys typed here are the box's: the page's shortcuts (Delete removes a block) stay out.
+  e.stopPropagation();
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    closeLinkBox(true);
+  }
+});
 
 // Enter in a paragraph splits it at the caret, as in a document (editor-ux.md §4.2):
 // the text after the caret moves into a new paragraph, written as one edit.
@@ -658,6 +878,9 @@ function onEditKey(e) {
   } else if (mod && (e.key.toLowerCase() === 'b' || e.key.toLowerCase() === 'i')) {
     e.preventDefault();
     toggleWrap(e.key.toLowerCase() === 'b' ? 'strong' : 'em');
+  } else if (mod && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    openLinkBox();
   } else if (mod && (e.key.toLowerCase() === 'd' || e.key === '/')) {
     // Duplicate and the source toggle act on the block, so they end editing first.
     e.preventDefault();
@@ -700,7 +923,9 @@ function watchPreview(d) {
 
 // Clicks on the editor's own controls end editing first, so they act on saved text.
 document.addEventListener('pointerdown', (e) => {
-  if (state.editing && e.target !== overlay) finishEditing();
+  const keeps = e.target.closest?.('#link-box, [data-keeps-editing]');
+  if (!keeps) closeLinkBox(false);
+  if (state.editing && e.target !== overlay && !keeps) finishEditing();
 }, true);
 // Typing not yet saved would be lost on reload or close. The store writes synchronously
 // before its first await, so the save completes while the page is still alive.
@@ -761,6 +986,15 @@ function renderBlockbar() {
   });
 
   const sep = () => Object.assign(document.createElement('span'), { className: 'sep' });
+  // A link goes on words chosen while writing, so pressing this keeps the writing (and the
+  // focus, by refusing mousedown's default) instead of ending it as other buttons do.
+  const node = nodeAt(state.doc, path);
+  const link = linkAllowedIn(node?.type) ? button('リンク', () => openLinkBox()) : null;
+  if (link) {
+    link.title = '選んだ文字をリンクにする (Ctrl+K)';
+    link.dataset.keepsEditing = '';
+    link.addEventListener('mousedown', (e) => e.preventDefault());
+  }
   const up = button('↑', () => moveBy(-1));
   up.title = '前へ (Alt+↑)';
   up.setAttribute('aria-label', '前へ');
@@ -777,7 +1011,7 @@ function renderBlockbar() {
   dup.title = '複製 (Ctrl+D)';
   const del = button('削除', removeSelected, 'danger');
   del.title = '削除 (Delete)';
-  blockbar.append(handle, crumbs, sep(), up, down, sep(), add, dup, del);
+  blockbar.append(handle, crumbs, ...(link ? [sep(), link] : []), sep(), up, down, sep(), add, dup, del);
 }
 
 // Above the block when there is room, else below it, so the toolbar never covers what is selected
@@ -1116,7 +1350,8 @@ function renderProps() {
   if (comp.kind === 'text') {
     const note = document.createElement('p');
     note.className = 'note';
-    note.textContent = '文字はプレビューの上でそのまま書けます。Ctrl+B で太字、Ctrl+I で斜体、Enter で次の段落、Shift+Enter で改行、Esc で書き終わります。リンクの追加はまだソースで行います。';
+    const linking = linkAllowedIn(node.type) ? '文字を選んで Ctrl+K（または上の帯の「リンク」）でリンクにできます。' : '';
+    note.textContent = `文字はプレビューの上でそのまま書けます。Ctrl+B で太字、Ctrl+I で斜体、Enter で次の段落、Shift+Enter で改行、Esc で書き終わります。${linking}`;
     panel.append(note);
   }
   if (comp.kind === 'raw') {
@@ -1539,6 +1774,22 @@ function uploadControl(path) {
   return wrap;
 }
 
+// Sends a PDF; its answer ({ src }), or null after saying why it was not taken.
+async function sendPdf(file) {
+  if (file.size > IMAGE_MAX) {
+    status('PDF が大きすぎます（2.5MB まで）。ページを分けるか、小さくしてから選んでください', 'error');
+    return null;
+  }
+  status('PDF を送っています…');
+  const res = await postJson('../api/media', { data: await base64Of(file), kind: 'document' });
+  if (!res.ok) {
+    const why = { 'not-pdf': 'この形式は使えません。PDF を選んでください', 'too-large': 'PDF が大きすぎます（2.5MB まで）' }[res.reason];
+    status(serverMessage(res, why ?? 'PDF を送れませんでした。もう一度選んでください'), 'error');
+    return null;
+  }
+  return res;
+}
+
 // A PDF for a button to open (rendering.md §7.4): sent as it is, up to the same size as an image.
 // A button still saying the template's "ボタン" is named after the file, so it never reads as
 // a bare "ボタン" on the page; any other wording is the writer's and stays.
@@ -1553,17 +1804,8 @@ function documentControl(path) {
     const file = input.files?.[0];
     input.value = '';
     if (!file) return;
-    if (file.size > IMAGE_MAX) {
-      status('PDF が大きすぎます（2.5MB まで）。ページを分けるか、小さくしてから選んでください', 'error');
-      return;
-    }
-    status('PDF を送っています…');
-    const res = await postJson('../api/media', { data: await base64Of(file), kind: 'document' });
-    if (!res.ok) {
-      const why = { 'not-pdf': 'この形式は使えません。PDF を選んでください', 'too-large': 'PDF が大きすぎます（2.5MB まで）' }[res.reason];
-      status(serverMessage(res, why ?? 'PDF を送れませんでした。もう一度選んでください'), 'error');
-      return;
-    }
+    const res = await sendPdf(file);
+    if (!res) return;
     // Read now: the panel is not rebuilt when only the words change, so a node kept from
     // when it was built could still say "ボタン" after the writer has retyped them.
     const node = nodeAt(state.doc, path);
