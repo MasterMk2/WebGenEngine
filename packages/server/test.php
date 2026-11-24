@@ -463,6 +463,28 @@ check($status === 200 && ($body['width'] ?? null) === 640 && ($body['height'] ??
 check(!array_key_exists('width', $body) && !array_key_exists('height', $body), 'an image whose size cannot be read comes back without one');
 check(Api::imageType('RIFF' . "\0\0\0\0" . 'WEBPVP8 ') === 'webp' && Api::imageType("GIF89a\0") === 'gif' && Api::imageType("\xFF\xD8\xFF\xE0") === 'jpg', 'WebP, GIF and JPEG are told by their bytes');
 
+// PDFs, for a button to open (rendering.md §7.4): asked for as a document, told by their bytes.
+$pdf = "%PDF-1.7\n1 0 obj << >> endobj\ntrailer << >>\n%%EOF\n";
+[$status, $body] = $bpost('/api/media', ['data' => base64_encode($pdf), 'kind' => 'document']);
+check($status === 200 && preg_match('#^\.\./media/[0-9a-f]{16}\.pdf$#D', $body['src']) === 1 && is_file($site . '/media/' . basename($body['src'])), 'a PDF is saved under media/');
+check(!array_key_exists('width', $body) && !array_key_exists('height', $body), 'a PDF comes back without a size');
+$pdfSrc = $body['src'];
+[$status, $body] = $bpost('/api/media', ['data' => base64_encode($pdf), 'kind' => 'document']);
+check($status === 200 && $body['src'] === $pdfSrc, 'the same PDF is kept once');
+[$status, $body] = $bpost('/api/media', ['data' => base64_encode($pdf)]);
+check($status === 415 && $body['reason'] === 'not-image', 'a PDF is not taken as an image');
+foreach ([$png, '<html><script>alert(1)</script></html>', "%PDF-1.7\n1 0 obj", "%PDF-x\n%%EOF", " %PDF-1.7\n%%EOF"] as $bytes) {
+    [$status, $body] = $bpost('/api/media', ['data' => base64_encode($bytes), 'kind' => 'document']);
+    check($status === 415 && $body['reason'] === 'not-pdf', 'only a whole PDF is taken as a document: ' . json_encode(substr($bytes, 0, 12)));
+}
+[$status, $body] = $bpost('/api/media', ['data' => base64_encode('%PDF-1.7' . str_repeat('a', Api::MAX_IMAGE) . '%%EOF'), 'kind' => 'document']);
+check($status === 413 && $body['reason'] === 'too-large', 'a PDF over the limit is refused');
+foreach (['video', '', 1, ['document']] as $kind) {
+    [$status] = $bpost('/api/media', ['data' => base64_encode($pdf), 'kind' => $kind]);
+    check($status === 400, 'an unknown kind is a bad request: ' . json_encode($kind));
+}
+check(Api::documentType("%PDF-2.0\n" . str_repeat('x', 5000) . "\n%%EOF\r\n") === 'pdf' && Api::documentType("%PDF-1.4\n%%EOF\n" . str_repeat('x', 2000)) === null, 'the end-of-file mark is looked for near the end');
+
 $mediaFront = new Front(new SvcAuth($key, 'front-app', $blogDb, static function () use (&$clock): int {
     return $clock;
 }), $blogApi, $packages, $site);

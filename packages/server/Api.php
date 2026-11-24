@@ -24,7 +24,8 @@ final class Api
     private const MAX_TITLE = 120;
     /** A description for search results and sharing; longer ones are cut there anyway. */
     private const MAX_DESCRIPTION = 300;
-    /** An image's bytes at most; the editor makes photos smaller before it sends them. */
+    /** An image's or a PDF's bytes at most; the editor makes photos smaller before it sends them.
+     *  As base64 in JSON this is about 3.4 MB, so it passes a relay in front that allows 4 MB. */
     public const MAX_IMAGE = 2_500_000;
     private const TITLES = ['top' => 'トップページ'];
 
@@ -87,7 +88,7 @@ final class Api
                 return self::reply(405, ['ok' => false, 'reason' => 'method']);
             }
             [$problem, $input] = self::postInput($body, $headers);
-            return $problem ?? $this->saveImage($input);
+            return $problem ?? $this->saveMedia($input);
         }
         if (preg_match('#^/api/pages/(' . self::PAGE_ID . ')/([a-z-]+)(?:/(\d{1,9}))?$#D', $path, $m) !== 1) {
             return self::reply(404, ['ok' => false, 'reason' => 'not-found']);
@@ -481,10 +482,15 @@ final class Api
     }
 
     // An image for the pages (JPEG, PNG, GIF or WebP, told by its bytes; never SVG, which can carry
-    // script). Named by its content, so the same image is kept once. Pages one folder down (blog
-    // posts, and the editor's preview) reach it as ../media/<name>.
-    private function saveImage(array $input): array
+    // script), or with "kind": "document" a PDF for a button to open (rendering.md §7.4). Named by
+    // its content, so the same file is kept once. Pages one folder down (blog posts, and the
+    // editor's preview) reach it as ../media/<name>.
+    private function saveMedia(array $input): array
     {
+        $kind = $input['kind'] ?? 'image';
+        if ($kind !== 'image' && $kind !== 'document') {
+            return self::reply(400, ['ok' => false, 'reason' => 'bad-request']);
+        }
         $data = $input['data'] ?? null;
         if (!is_string($data) || strlen($data) > intdiv(self::MAX_IMAGE * 4, 3) + 8) {
             return self::reply(413, ['ok' => false, 'reason' => 'too-large']);
@@ -496,14 +502,17 @@ final class Api
         if (strlen($bytes) > self::MAX_IMAGE) {
             return self::reply(413, ['ok' => false, 'reason' => 'too-large']);
         }
-        $ext = self::imageType($bytes);
+        $ext = $kind === 'image' ? self::imageType($bytes) : self::documentType($bytes);
         if ($ext === null) {
-            return self::reply(415, ['ok' => false, 'reason' => 'not-image']);
+            return self::reply(415, ['ok' => false, 'reason' => $kind === 'image' ? 'not-image' : 'not-pdf']);
         }
         $name = substr(hash('sha256', $bytes), 0, 16) . '.' . $ext;
         $file = $this->siteDir . '/media/' . $name;
         if (!is_file($file)) {
             self::writeAtomically($file, $bytes);
+        }
+        if ($ext === 'pdf') {
+            return self::reply(200, ['ok' => true, 'src' => '../media/' . $name]);
         }
         // The size, so the page keeps room for the picture before it loads (rendering.md §8 → schema).
         // Read from the header only; an image whose header cannot be read is kept without one.
@@ -528,6 +537,16 @@ final class Api
             return 'webp';
         }
         return null;
+    }
+
+    // A PDF, told by the header it starts with (%PDF-1.x or %PDF-2.x) and the end-of-file mark
+    // near its end, so a file cut short in sending is not kept as one.
+    public static function documentType(string $bytes): ?string
+    {
+        if (preg_match('/^%PDF-[12]\.\d/', $bytes) !== 1 || !str_contains(substr($bytes, -1024), '%%EOF')) {
+            return null;
+        }
+        return 'pdf';
     }
 
     // Writes the public page for $pageId, or removes it when nothing is published.

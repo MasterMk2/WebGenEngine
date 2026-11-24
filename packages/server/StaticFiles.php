@@ -20,6 +20,7 @@ final class StaticFiles
         'png' => 'image/png',
         'gif' => 'image/gif',
         'webp' => 'image/webp',
+        'pdf' => 'application/pdf',
     ];
 
     // $root/$relative ("" or a path ending in "/" means its index.html) as [type, content], or null.
