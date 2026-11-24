@@ -604,6 +604,8 @@ final class Api
                 'loaded' => $row !== false,
                 'published' => $row !== false && $row['published'] !== null,
                 'savedAt' => $row !== false && $row['draft_saved_at'] !== null ? (int) $row['draft_saved_at'] : null,
+                // The published version, which every page carries; the editor draws it around a page.
+                'source' => $row !== false && $row['published'] !== null ? (new PageStore($this->db, $id, $this->now))->publishedSource() : null,
             ];
         }
         return $parts;

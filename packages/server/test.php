@@ -625,7 +625,7 @@ check($status === 409 && $body['reason'] === 'path-taken', 'a deleted page keeps
 
 // The header and footer (site.md §5).
 [, $body] = $siteApi->handle('GET', '/api/pages', '', []);
-check(($body['parts'] ?? null) === [['id' => 'part-header', 'loaded' => false, 'published' => false, 'savedAt' => null], ['id' => 'part-footer', 'loaded' => false, 'published' => false, 'savedAt' => null]], 'the list has the header and footer apart, not loaded at first');
+check(($body['parts'] ?? null) === [['id' => 'part-header', 'loaded' => false, 'published' => false, 'savedAt' => null, 'source' => null], ['id' => 'part-footer', 'loaded' => false, 'published' => false, 'savedAt' => null, 'source' => null]], 'the list has the header and footer apart, not loaded at first');
 [$status] = $spost('/api/pages/part-menu/load', ['initialSource' => '']);
 check($status === 404, 'no other part exists');
 [$status, $body] = $spost('/api/pages/part-header/load', ['initialSource' => '', 'meta' => ['title' => 'ヘッダー', 'path' => 'header.html']]);
@@ -655,6 +655,7 @@ check($status === 409 && $body['reason'] === 'part', 'a part takes no title');
 check($status === 409 && $body['reason'] === 'part', 'a part is not deleted');
 [, $body] = $siteApi->handle('GET', '/api/pages', '', []);
 check(!in_array('part-header', array_column($body['pages'], 'id'), true) && $body['parts'][0]['loaded'] === true && $body['parts'][0]['published'] === true && is_int($body['parts'][0]['savedAt']), 'the parts are listed apart, loaded and published');
+check(is_string($body['parts'][0]['source']) && str_contains($body['parts'][0]['source'], '合成の祭') && !str_contains($body['parts'][0]['source'], '合成の下書き') && $body['parts'][1]['source'] === "<Text size=\"sm\">© 合成の祭</Text>\n", 'the parts come with their published source, never the draft');
 [$status] = $spost('/api/pages/noimg/load', ['initialSource' => "<Text>絵なし</Text>\n", 'meta' => ['title' => '絵なし', 'path' => 'plain.html']]);
 [$status] = $spost('/api/pages/noimg/publish', ['revision' => 0]);
 $plain = $sread('plain.html');

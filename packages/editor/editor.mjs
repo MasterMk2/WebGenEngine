@@ -8,7 +8,7 @@ import { slotIndex, slotGuide, nearEdge, moveArgs } from './slots.mjs';
 import { inlineFromDom } from './inline-dom.mjs';
 import { createPageStore } from './store.mjs';
 import { createHttpStore } from './http-store.mjs';
-import { addressOf, cleanPath, cleanTitle, embedSrcFrom, fitWithin, HEADER, isPart, PAGE_ID, pageHref, partTemplate, postTemplate } from './posts-core.mjs';
+import { addressOf, cleanPath, cleanTitle, embedSrcFrom, fitWithin, FOOTER, HEADER, isPart, PAGE_ID, pageHref, partTemplate, postTemplate } from './posts-core.mjs';
 
 const fetchText = (p) => fetch(p).then((r) => {
   if (!r.ok) throw new Error(`${p}: ${r.status}`);
@@ -93,6 +93,11 @@ const PREVIEW_CSS = `
 /* An empty row or cell keeps room to click on. */
 .wge-table tr:empty { height: 2em; outline: 1px dashed #9aa3ad; outline-offset: -2px; }
 .wge-table :is(th, td):empty { min-width: 3em; height: 1.7em; }
+/* The site's header and footer around a page (site.md §6): shown as they are published, faded,
+   and not chosen by a click (they have no data-wge-path); they are edited on pages of their own. */
+[data-wge-part] { position: relative; }
+[data-wge-part] > * { opacity: 0.55; }
+[data-wge-part]::after { content: attr(data-wge-part); position: absolute; top: 4px; right: 6px; padding: 1px 6px; border-radius: 4px; background: #5f6368; color: #fff; font: 11px/1.6 system-ui, sans-serif; }
 /* Room above the first block for the toolbar of the selected block (placeBlockbar): the toolbar
    is about 35px tall and stands 6px off, 4px from the edge. A section at the very top needs it all. */
 body { padding-top: 48px; }
@@ -263,17 +268,41 @@ function render() {
   overlay.classList.remove('editing');
   frameWrap.classList.toggle('stale', Boolean(state.sourceError));
   previewScroll = frame.contentWindow?.scrollY ?? previewScroll;
+  const part = (tag, cls, doc, label) => (doc ? `<${tag} class="${cls}" data-wge-part="${label}">\n${renderer.renderFragment(doc, '  ')}</${tag}>` : '');
   frame.srcdoc = [
     '<!doctype html><html lang="ja"><head><meta charset="utf-8">',
     `<style>${renderer.stylesheet()}${PREVIEW_CSS}</style></head><body>`,
+    part('header', 'wge-site-header', siteParts.header, 'ヘッダー（全ページ共通。ページの一覧から直します）'),
     '<main class="wge-page" data-wge-path="">',
     renderer.renderFragment(state.doc, '  ', { annotate: true }),
-    '</main></body></html>',
+    '</main>',
+    part('footer', 'wge-site-footer', siteParts.footer, 'フッター（全ページ共通。ページの一覧から直します）'),
+    '</body></html>',
   ].join('\n');
   renderProps();
   renderBackdrop();
   $('undo').disabled = state.undo.length === 0;
   $('redo').disabled = state.redo.length === 0;
+}
+
+// The site's published header and footer, drawn around a page in the preview as every page
+// carries them (site.md §5). Read once when the editor opens; none for the parts themselves.
+let siteParts = { header: null, footer: null };
+
+async function loadSiteParts() {
+  const res = await fetch('../api/pages', { cache: 'no-store' }).then((r) => r.json()).catch(() => null);
+  const of = (id) => {
+    const source = res?.parts?.find?.((p) => p.id === id)?.source;
+    if (typeof source !== 'string') return null;
+    try {
+      return sf.parse(source);
+    } catch {
+      return null;
+    }
+  };
+  siteParts = { header: of(HEADER), footer: of(FOOTER) };
+  // Never while writing: rendering would drop what is being typed. The next render draws them.
+  if ((siteParts.header || siteParts.footer) && !state.editing) render();
 }
 
 // Runs once after the next preview load, to continue an action on the new document.
@@ -2158,3 +2187,4 @@ if (readable(page.draft.source)) {
   status('保存されていた下書きを読めなかったため、サンプルを開きました', 'error');
 }
 showSaveState(saving.savedSource === state.source ? 'saved' : 'pending');
+if (serverMode && siteMode && !isPart(pageId)) loadSiteParts();
