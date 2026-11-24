@@ -336,6 +336,31 @@ check($status === 200 && $body['meta']['description'] === '合成の説明 <i>&"
 $page = (string) @file_get_contents($site . '/20261123-a1b2/index.html');
 check(str_contains($page, '<meta name="description" content="合成の説明 &lt;i&gt;&amp;&quot;">') && str_contains($page, '<meta property="og:description" content="合成の説明 &lt;i&gt;&amp;&quot;">'), 'a post has its description, escaped');
 check(str_contains($page, '<link rel="canonical" href="https://site.example/blog/20261123-a1b2/">') && str_contains($page, '<meta property="og:type" content="article">') && str_contains($page, '<meta property="og:image" content="https://site.example/blog/media/0123456789abcdef.png">') && str_contains($page, 'summary_large_image'), "a post's address and first picture are written for sharing");
+// The look of the blog (blog.md §7): a list with dates, descriptions and pictures, and a frame around each post.
+$contents = (string) @file_get_contents($site . '/index.html');
+check(str_contains($contents, "<main class=\"wge-page\">\n  <section class=\"wge-section wge-padding-lg wge-bg-primary wge-width-narrow\">\n    <div class=\"wge-stack\">\n      <h1 class=\"wge-heading\">合成のお知らせ</h1>"), "the contents page opens with the blog's name on a band");
+check(str_contains($contents, '<time class="wge-posts-date" datetime="2026-11-23">2026年11月23日</time>') && str_contains($contents, '<h2 class="wge-posts-title"><a href="20261123-a1b2/">合成の記事 &lt;b&gt;&amp;&quot;</a></h2>'), 'each post in the list has its date and its title, escaped');
+check(str_contains($contents, '<p class="wge-posts-description">合成の説明 &lt;i&gt;&amp;&quot;</p>') && str_contains($contents, '<img class="wge-posts-thumb" src="media/0123456789abcdef.png" alt="" loading="lazy" decoding="async">'), 'a post in the list has its description and its first picture');
+check(substr_count($contents, 'class="wge-posts-thumb"') === 1 && substr_count($contents, 'class="wge-posts-description"') === 1 && substr_count($contents, 'class="wge-posts-item"') === 2, 'a post without a picture or a description shows none');
+check(str_contains($contents, '<a href="feed.xml">') && str_contains($contents, "</ol>\n  <p class=\"wge-posts-feed\">") && str_contains($contents, "</div>\n</main>\n"), 'the list and the link to the feed are the last part of <main>');
+$page = (string) @file_get_contents($site . '/20261123-a1b2/index.html');
+check(str_contains($page, "<main class=\"wge-page\">\n<div class=\"wge-post-head\">\n  <div>\n    <p class=\"wge-post-crumb\"><a href=\"../\">‹ 合成のお知らせ</a></p>\n    <time class=\"wge-post-date\" datetime=\"2026-11-23\">2026年11月23日</time>"), 'a post opens with the way back to the contents and its date');
+check(str_contains($page, "<div class=\"wge-post-foot\">\n  <div><a class=\"wge-post-back\" href=\"../\">‹ 記事の一覧へ</a></div>\n</div>\n</main>\n") && strpos($page, 'wge-post-head') < strpos($page, '<h1 class="wge-heading">合成の記事</h1>') && strpos($page, '<h1 class="wge-heading">合成の記事</h1>') < strpos($page, 'wge-post-foot'), 'the post comes between its frame, all inside <main>');
+$framed = (new Blog('合成', $format, $renderer))->framePost("<body>\n<main class=\"wge-page\">\n<pre></main>\n<main class=\"wge-page\">\n</pre>\n</main>\n</body>\n", '2026-11-23');
+check(preg_match('#^<body>\n<main class="wge-page">\n<div class="wge-post-head">.*</div>\n</div>\n<pre></main>\n<main class="wge-page">\n</pre>\n<div class="wge-post-foot">.*</div>\n</main>\n</body>\n$#sD', $framed) === 1, "the frame goes after the first <main> and before the last </main>, whatever the post's text holds");
+check((new Blog('合成', $format, $renderer))->framePost("<p>no main</p>\n", '2026-11-23') === "<p>no main</p>\n", 'a page without <main> is left as it is');
+foreach ([['../media/0123456789abcdef.webp', 'media/0123456789abcdef.webp'], ['https://cdn.example/a.png', 'https://cdn.example/a.png'], ['../media/0123456789abcdef.svg', null], ['../media/x.png', null], ['/media/0123456789abcdef.png', null], ['media/0123456789abcdef.png', null], ['//evil.example/a.png', null], ['javascript:alert(1)', null], ['https://cdn.example/a b.png', null], ['https://cdn.example/a".png', null]] as [$src, $want]) {
+    check(Api::contentsImageOf($src) === $want, "a post's picture in the contents page: {$src}");
+}
+// A new theme: rebuildSite writes every published page and style.css again, drafts untouched.
+$themed = Renderer::fromFiles($packages . '/source', array_replace_recursive(json_decode((string) file_get_contents($packages . '/source/theme.default.json'), true), ['color' => ['primary' => '#1b5e20']]));
+$themedApi = new Api($blogDb, $site, $format, $themed, siteUrl: 'https://site.example/blog/', blog: new Blog('合成のお知らせ', $format, $themed, 'https://site.example/blog/'));
+@unlink($site . '/20261101-c3d4/index.html');
+$beforeDraft = $blogDb->query("SELECT draft_source, draft_revision FROM pages WHERE id = '20261123-a1b2'")->fetch(PDO::FETCH_ASSOC);
+$rebuilt = $themedApi->rebuildSite();
+check($rebuilt === ['20261123-a1b2', '20261101-c3d4'], 'a rebuild writes the published posts again: ' . json_encode($rebuilt));
+check(str_contains((string) @file_get_contents($site . '/style.css'), '--wge-color-primary: #1b5e20;') && str_contains((string) @file_get_contents($site . '/20261101-c3d4/index.html'), 'wge-post-head'), 'a rebuild writes style.css from the new theme and brings back a missing post');
+check($blogDb->query("SELECT draft_source, draft_revision FROM pages WHERE id = '20261123-a1b2'")->fetch(PDO::FETCH_ASSOC) === $beforeDraft && str_contains((string) @file_get_contents($site . '/index.html'), 'wge-posts-thumb'), 'a rebuild changes no draft, and the contents page keeps its pictures');
 [$status, $body] = $bpost('/api/pages/20261123-a1b2/meta', ['title' => '合成の記事 <b>&"', 'date' => '2026-11-23']);
 check($status === 200 && $body['meta']['description'] === '合成の説明 <i>&"', 'a title change without a description keeps it');
 $feed = (string) @file_get_contents($site . '/feed.xml');
@@ -448,6 +473,17 @@ foreach (['/media/../index.html', '/media/x.svg', '/media/' . str_repeat('0', 16
     [$status] = $frontCall($path);
     check($status === 404, "the front serves no other file of the site: {$path}");
 }
+// The editor's preview reads the site's theme as source/theme.json (rendering.md §4).
+[$status, $headers, $out] = $frontCall('/source/theme.json');
+check($status === 200 && $headers['Content-Type'] === 'application/json; charset=utf-8' && json_decode($out, true) === json_decode((string) file_get_contents($packages . '/source/theme.default.json'), true), 'without a theme of its own, the front gives the default theme to the preview');
+$siteTheme = array_replace_recursive(json_decode((string) file_get_contents($packages . '/source/theme.default.json'), true), ['color' => ['primary' => '#1b5e20']]);
+$themeFront = new Front(new SvcAuth($key, 'front-app', $blogDb, static function () use (&$clock): int {
+    return $clock;
+}), $blogApi, $packages, $site, theme: $siteTheme);
+[$status, , $out] = $themeFront->handle('GET', '/source/theme.json', '', $signed('GET', '/source/theme.json', ''));
+check($status === 200 && json_decode($out, true) === $siteTheme, "the front gives the site's theme to the preview");
+[$status] = $themeFront->handle('GET', '/source/theme.json', '', []);
+check($status === 403, 'the theme is served only to the front');
 
 array_map('unlink', glob($site . '/*/*') ?: []);
 array_map('rmdir', glob($site . '/*', GLOB_ONLYDIR) ?: []);
@@ -533,6 +569,11 @@ file_put_contents($siteDir . '/notdir', 'a file');
 [$status] = $spost('/api/pages/under/load', ['initialSource' => $links, 'meta' => ['title' => '下', 'path' => 'notdir/a.html']]);
 [$status, $body] = $spost('/api/pages/under/publish', ['revision' => 0]);
 check($status === 409 && $body['reason'] === 'path-occupied', 'a file where a folder of the path would be stops the publish');
+// A rebuild (blog.md §7) writes the pages WGE wrote, where they are, and nothing else.
+$filesBefore = $siteDb->query('SELECT path, page FROM site_files ORDER BY path')->fetchAll(PDO::FETCH_ASSOC);
+@unlink($siteDir . '/en/index.html');
+$rebuilt = $siteApi->rebuildSite();
+check(in_array('en-top', $rebuilt, true) && !in_array('under', $rebuilt, true) && is_file($siteDir . '/en/index.html') && $siteDb->query('SELECT path, page FROM site_files ORDER BY path')->fetchAll(PDO::FETCH_ASSOC) === $filesBefore, "a site's rebuild writes its published pages where they are, and its list of files stays: " . json_encode($rebuilt));
 
 // A new path takes effect on the next publish only.
 [$status, $body] = $spost('/api/pages/en-top/meta', ['title' => 'Fest!', 'path' => 'en/top.html']);

@@ -77,3 +77,45 @@ small { font-size: var(--wge-font-size-sm); }
 /* The site's header and footer (site.md §5): set apart from the page by a line. */
 .wge-site-header { border-block-end: 1px solid var(--wge-color-subtle); }
 .wge-site-footer { border-block-start: 1px solid var(--wge-color-subtle); }
+
+/* Heading sizes that read well on a phone and on a computer (2026-11-24). */
+h1.wge-heading { font-size: clamp(1.375rem, 5.6vw, 1.875rem); }
+h2.wge-heading { font-size: clamp(1.1875rem, 5vw, 1.4375rem); }
+h3.wge-heading { font-size: 1.125rem; }
+
+/* The blog's contents page and the frame around a post (blog.md §7). The server writes these
+   classes itself; they never come from a page's source. */
+.wge-posts { padding-inline: var(--wge-space-md); padding-block-end: var(--wge-space-xl); }
+.wge-posts > * { max-width: min(100%, var(--wge-width-narrow)); margin-inline: auto; }
+.wge-posts-list { margin-block: 0; padding: 0; list-style: none; }
+.wge-posts-item { position: relative; display: flex; gap: var(--wge-space-md); align-items: flex-start; padding-block: 1.25rem; border-block-end: 1px solid color-mix(in srgb, var(--wge-color-text) 18%, var(--wge-color-background)); }
+.wge-posts-body { flex: 1 1 auto; min-width: 0; }
+.wge-posts-date, .wge-post-date { display: block; color: var(--wge-color-primary); font-size: var(--wge-font-size-sm); font-weight: 700; font-variant-numeric: tabular-nums; }
+.wge-posts-title { margin: 0.125rem 0 0; font-size: 1.125rem; line-height: 1.5; }
+.wge-posts-title a { color: var(--wge-color-text); text-decoration: none; }
+/* The whole row opens the post; the link is still the title, for screen readers. */
+.wge-posts-title a::after { content: ""; position: absolute; inset: 0; }
+.wge-posts-item:hover .wge-posts-title a { color: var(--wge-color-primary); text-decoration: underline; text-underline-offset: 3px; }
+.wge-posts-description { margin: 0.25rem 0 0; color: color-mix(in srgb, var(--wge-color-text) 72%, var(--wge-color-background)); font-size: 0.9375rem; line-height: 1.7; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.wge-posts-thumb { flex: 0 0 auto; width: 6.5rem; height: auto; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--wge-radius); background: var(--wge-color-subtle); }
+.wge-posts-empty { margin-block: 0; padding-block: var(--wge-space-xl); }
+.wge-posts-feed { margin-block: var(--wge-space-lg) 0; font-size: var(--wge-font-size-sm); }
+.wge-post-head, .wge-post-foot { padding-inline: var(--wge-space-md); }
+.wge-post-head > *, .wge-post-foot > * { max-width: min(100%, var(--wge-width-narrow)); margin-inline: auto; }
+.wge-post-head { padding-block-start: var(--wge-space-md); }
+.wge-post-crumb { margin: 0; font-size: var(--wge-font-size-sm); }
+.wge-post-crumb a { display: inline-flex; align-items: center; min-height: 2.75rem; }
+.wge-post-date { margin-block-start: var(--wge-space-sm); }
+.wge-post-head + .wge-section { padding-block-start: var(--wge-space-xs); }
+.wge-post-head ~ .wge-section:not(.wge-bg-primary, .wge-bg-inverse) h2.wge-heading { margin-block-start: var(--wge-space-md); padding-block-end: 0.5rem; border-block-end: 2px solid var(--wge-color-primary); color: var(--wge-color-primary); }
+.wge-post-head ~ .wge-section .wge-image { border-radius: var(--wge-radius); }
+.wge-post-foot { padding-block-end: var(--wge-space-xl); }
+.wge-post-foot > div { display: flex; flex-wrap: wrap; gap: var(--wge-space-sm) var(--wge-space-md); padding-block-start: var(--wge-space-lg); border-block-start: 1px solid color-mix(in srgb, var(--wge-color-text) 18%, var(--wge-color-background)); }
+.wge-post-back { display: inline-flex; align-items: center; min-height: 2.75rem; padding: 0.5rem 1.375rem; border: 2px solid var(--wge-color-primary); border-radius: var(--wge-radius); color: var(--wge-color-primary); font-weight: 700; text-decoration: none; }
+.wge-post-back:hover { background: color-mix(in srgb, var(--wge-color-primary) 10%, var(--wge-color-background)); }
+
+@media (min-width: 40rem) {
+  .wge-posts-item { gap: var(--wge-space-lg); padding-block: 1.5rem; }
+  .wge-posts-title { font-size: 1.25rem; }
+  .wge-posts-thumb { width: 11rem; aspect-ratio: 16 / 9; }
+}
