@@ -1,16 +1,24 @@
-// The list of pages (blog posts) on the server: open one in the editor, or start a new one.
-// Needs the save API (packages/server); the editor opens a page with index.html#p=<id>.
-// Spec: docs/design/blog.md.
+// The list of pages (blog posts) on the server: open one in the editor, start a new one, delete a
+// draft and restore it. Needs the save API (packages/server); the editor opens a page with
+// index.html#p=<id>. Spec: docs/design/blog.md.
 
 import { cleanTitle, dateLabel, newPostId, postTemplate, today } from './posts-core.mjs';
 
 const $ = (id) => document.getElementById(id);
 const headers = { 'content-type': 'application/json', 'x-wge-request': '1' };
 
-function status(text, kind = '') {
+// The line under the form; `action` is a button after the text, such as 元に戻す.
+function status(text, kind = '', action = null) {
   const el = $('status');
-  el.textContent = text;
+  el.replaceChildren(text);
   el.className = `posts-status ${kind}`;
+  if (action) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = action.label;
+    button.addEventListener('click', action.run, { once: true });
+    el.append(' ', button);
+  }
 }
 
 // The API's answer, or a refusal in the same form (network, or a page that is not the API's).
@@ -41,13 +49,85 @@ function render(pages) {
     const a = document.createElement('a');
     a.href = `index.html#p=${page.id}`;
     a.textContent = page.title;
+    const side = document.createElement('span');
+    side.className = 'post-side';
     const meta = document.createElement('span');
     meta.className = 'post-meta';
     meta.textContent = [dateLabel(page.date), page.published ? '公開中' : '下書き'].filter(Boolean).join('・');
-    li.append(a, meta);
+    side.append(meta);
+    // A published post is taken back in the editor first, so deleting never changes the site.
+    if (!page.published) side.append(rowButton('削除', `「${page.title}」を削除`, 'danger', () => remove(page)));
+    li.append(a, side);
     if (page.published) li.classList.add('live');
     list.append(li);
   }
+}
+
+function renderDeleted(pages) {
+  $('trash').hidden = pages.length === 0;
+  $('trash-count').textContent = String(pages.length);
+  const list = $('trash-list');
+  list.replaceChildren();
+  for (const page of pages) {
+    const li = document.createElement('li');
+    const title = document.createElement('span');
+    title.className = 'post-title';
+    title.textContent = page.title;
+    const side = document.createElement('span');
+    side.className = 'post-side';
+    const meta = document.createElement('span');
+    meta.className = 'post-meta';
+    meta.textContent = `${dateLabel(today(new Date(page.deletedAt)))}に削除`;
+    side.append(meta, rowButton('元に戻す', `「${page.title}」を元に戻す`, '', () => restore(page)));
+    li.append(title, side);
+    list.append(li);
+  }
+}
+
+function rowButton(text, label, className, run) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = text;
+  button.className = className;
+  button.setAttribute('aria-label', label);
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    await run();
+    button.disabled = false;
+  });
+  return button;
+}
+
+// Both lists, read again after a change (another person may have changed them too).
+async function refresh() {
+  const [listed, deleted] = await Promise.all([call('/pages'), call('/deleted-pages')]);
+  if (listed.ok) render(listed.pages);
+  else status(said(listed, '記事の一覧を読み込めませんでした。'), 'error');
+  if (deleted.ok) renderDeleted(deleted.pages);
+  return listed.ok;
+}
+
+// Deleting can be undone, so it asks nothing first: the line under the form offers 元に戻す.
+async function remove(page) {
+  const res = await call(`/pages/${page.id}/delete`, {});
+  if (res.ok) {
+    await refresh();
+    status(`「${page.title}」を削除しました。`, '', { label: '元に戻す', run: () => restore(page) });
+    return;
+  }
+  const why = {
+    published: 'この記事は公開中のため削除できません。エディタで公開を取り消してから削除してください。',
+    deleted: 'この記事はすでに削除されています。',
+  }[res.reason];
+  await refresh();
+  status(why ?? said(res, '削除できませんでした。もう一度押してください。'), 'error');
+}
+
+async function restore(page) {
+  const res = await call(`/pages/${page.id}/restore`, {});
+  await refresh();
+  if (res.ok) status(`「${page.title}」を元に戻しました。下書きとして一覧にあります。`);
+  else status(res.reason === 'not-deleted' ? 'この記事はすでに一覧に戻っています。' : said(res, '元に戻せませんでした。もう一度押してください。'), 'error');
 }
 
 const ping = await call('/ping');
@@ -63,9 +143,7 @@ if (ping.ok === false) {
     $('view-site').hidden = false;
   }
   $('new-date').value = today();
-  const listed = await call('/pages');
-  if (listed.ok) render(listed.pages);
-  else status(said(listed, '記事の一覧を読み込めませんでした。'), 'error');
+  await refresh();
 }
 
 $('new-post').addEventListener('submit', async (event) => {
