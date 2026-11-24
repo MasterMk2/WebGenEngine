@@ -12,7 +12,7 @@ COPY packages/source/render packages/source/render
 COPY packages/source/js packages/source/js
 COPY packages/source/php packages/source/php
 COPY packages/editor packages/editor
-COPY packages/server/Api.php packages/server/Blog.php packages/server/Front.php packages/server/PageStore.php packages/server/StaticFiles.php packages/server/SvcAuth.php packages/server/trusted-front.php packages/server/
+COPY packages/server/Api.php packages/server/Blog.php packages/server/Front.php packages/server/PageStore.php packages/server/Site.php packages/server/StaticFiles.php packages/server/SvcAuth.php packages/server/trusted-front.php packages/server/
 
 # The built-in server, with a few workers so that one slow request does not hold the others.
 ENV WGE_DATA=/data WGE_SITE_DIR=/site PHP_CLI_SERVER_WORKERS=4

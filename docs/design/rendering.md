@@ -79,6 +79,8 @@ PHP の `renderPage($doc, $title, $lang = 'ja', $stylesheetHref = 'style.css', $
 
 値の誤りと知らない項目は `RenderError`（`E_HEAD`、key は `head.<項目>`）。調べる順は表の順、そのあと知らない項目。`null` は渡さなかったのと同じ。
 
+サイトの共通の部分（2026-11-24、site.md §5）: PHP は `renderPage(..., $head, ?Document $header = null, ?Document $footer = null)`、JS は `renderPage(doc, { ..., header, footer })`。渡したときだけ、`<main>` の前に `<header class="wge-site-header">`、後ろに `<footer class="wge-site-footer">` を書く。中身の書き方は `<main>` と同じ（字下げ 2 つ、空なら開きと閉じのタグだけ、Html は `trustRaw` が偽なら無害化）。渡さなければ、出力は前と 1 バイトも変わらない。
+
 `renderFragment` も同じ `trustRaw` を受け取る（PHP は `renderFragment($doc, $indent = '', $trustRaw = false)`、JS は `renderFragment(doc, indent, { trustRaw })`）。`trustRaw` が真のときだけ Html の中身をそのまま出し、それ以外は無害化する（§7）。
 
 JS の `renderFragment(doc, indent, { annotate: true })` は、エディタのプレビュー専用の書き出し（`editor.md` §4）。各部品に `data-wge-path` を付け、Html の中身を出さずに枠にする。PHP 版にはない。公開ページでは使わない。

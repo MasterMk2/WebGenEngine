@@ -10,6 +10,8 @@
 //   WGE_SITE_URL      where the published site is seen (http:// or https://), for "サイトを見る"
 //   WGE_BLOG_TITLE    when set, the site is a blog with this name: its contents page and feed
 //                     are made from the published posts (docs/design/blog.md)
+//   WGE_SITE_NAME     when set, the site is pages written where their paths say, with a header and
+//                     footer shared by them all (docs/design/site.md). Not with WGE_BLOG_TITLE yet
 // A theme of the site's own goes in WGE_DATA/theme.json (docs/design/rendering.md §4); without
 // it the default theme is used. After a new theme or a new version of WGE, write the published
 // pages again with the same settings: php packages/server/trusted-front.php --rebuild
@@ -23,6 +25,7 @@ require __DIR__ . '/../source/php/Renderer.php';
 require __DIR__ . '/PageStore.php';
 require __DIR__ . '/Api.php';
 require __DIR__ . '/Blog.php';
+require __DIR__ . '/Site.php';
 require __DIR__ . '/StaticFiles.php';
 require __DIR__ . '/SvcAuth.php';
 require __DIR__ . '/Front.php';
@@ -31,6 +34,7 @@ use WebGenEngine\Server\Api;
 use WebGenEngine\Server\Blog;
 use WebGenEngine\Server\Front;
 use WebGenEngine\Server\PageStore;
+use WebGenEngine\Server\Site;
 use WebGenEngine\Server\SvcAuth;
 use WebGenEngine\Source\RenderError;
 use WebGenEngine\Source\Renderer;
@@ -93,7 +97,15 @@ if ($blogTitle !== '' && (mb_strlen($blogTitle) > 120 || preg_match('/[\x00-\x1f
     return $refuse('WGE_BLOG_TITLE must be one line of 120 characters or fewer');
 }
 $blog = $blogTitle === '' ? null : new Blog($blogTitle, $format, $renderer, $siteUrl);
-$api = new Api($db, $site, $format, $renderer, siteUrl: $siteUrl, blog: $blog);
+$siteName = trim((string) getenv('WGE_SITE_NAME'));
+if ($siteName !== '' && !Site::validName($siteName)) {
+    return $refuse('WGE_SITE_NAME must be one line of 120 characters or fewer');
+}
+if ($siteName !== '' && $blog !== null) {
+    return $refuse('WGE_SITE_NAME and WGE_BLOG_TITLE cannot be used together yet (docs/design/site.md §2)');
+}
+$sitePages = $siteName === '' ? null : new Site($siteName, json_decode((string) file_get_contents($packages . '/source/schema.json'), true, 512, JSON_THROW_ON_ERROR));
+$api = new Api($db, $site, $format, $renderer, siteUrl: $siteUrl, blog: $blog, site: $sitePages);
 if ($rebuild) {
     $ids = $api->rebuildSite();
     fwrite(STDOUT, 'wge: wrote ' . count($ids) . " published pages again, with the contents page and style.css\n");
@@ -105,7 +117,7 @@ $front = new Front(
     $packages,
     $site,
     $data . '/audit.jsonl',
-    copySamples: $blog === null,
+    copySamples: $blog === null && $sitePages === null,
     theme: $theme,
 );
 $headers = array_change_key_case(function_exists('getallheaders') ? getallheaders() : [], CASE_LOWER);

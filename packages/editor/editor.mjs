@@ -8,7 +8,7 @@ import { slotIndex, slotGuide, nearEdge, moveArgs } from './slots.mjs';
 import { inlineFromDom } from './inline-dom.mjs';
 import { createPageStore } from './store.mjs';
 import { createHttpStore } from './http-store.mjs';
-import { cleanTitle, fitWithin, PAGE_ID } from './posts-core.mjs';
+import { addressOf, cleanPath, cleanTitle, fitWithin, HEADER, isPart, PAGE_ID, partTemplate, postTemplate } from './posts-core.mjs';
 
 const fetchText = (p) => fetch(p).then((r) => {
   if (!r.ok) throw new Error(`${p}: ${r.status}`);
@@ -1125,6 +1125,11 @@ const storage = webStorage();
 const PAGE = /^#p=([a-z0-9-]+)$/.exec(location.hash)?.[1] ?? 'top';
 const pageId = PAGE_ID.test(PAGE) ? PAGE : 'top';
 window.addEventListener('hashchange', () => location.reload());
+// A site of pages (site.md): its pages have a path instead of a date, and its header and footer
+// (part-header, part-footer) are edited here like a page. Set at start-up from /api/ping.
+let siteMode = false;
+// Where a site's page goes when next published, and where it is written now (null: nowhere).
+const sitePaths = { path: null, livePath: null };
 // Replaced at start-up by the server's store when the editor is served with the PHP API
 // (packages/server/router.php); otherwise the page stays in this browser.
 let store = createPageStore(storage, pageId);
@@ -1158,11 +1163,13 @@ function showSaveState(kind) {
   $('view-site').hidden = !serverMode || saving.publishedSource === null;
   // Text being written counts as a change, so "公開" can be pressed without leaving it first;
   // the press saves the text and then publishes it.
-  const live = state.source === saving.publishedSource && !state.editing?.dirty;
+  // A site's page with a new path is published again to move it, even with the same content (site.md §3).
+  const moving = siteMode && sitePaths.livePath !== null && sitePaths.path !== null && sitePaths.livePath !== sitePaths.path;
+  const live = !moving && state.source === saving.publishedSource && !state.editing?.dirty;
   const pub = $('publish');
   pub.disabled = live;
   pub.textContent = live ? '公開済み' : '公開';
-  pub.title = live ? '公開中のページと同じ内容です' : 'いまの内容を公開する';
+  pub.title = live ? '公開中のページと同じ内容です' : moving ? `公開して、書き出し先を ${sitePaths.path} へ移す` : 'いまの内容を公開する';
 }
 
 // The save state when nothing is running: what the header shows after a no-op.
@@ -1255,8 +1262,29 @@ function showMeta(meta) {
   $('page-title').value = meta.title;
   $('page-date').value = meta.date;
   $('page-description').value = meta.description ?? '';
+  if (siteMode) {
+    $('page-date').hidden = true;
+    $('page-path').hidden = false;
+    sitePaths.path = meta.path ?? null;
+    sitePaths.livePath = meta.livePath ?? null;
+    $('page-path').value = sitePaths.path ?? '';
+    showPathNote();
+  }
   showDescriptionCount();
   document.title = `${meta.title} – エディタ`;
+}
+
+// "サイトを見る" opens where a site's page is written now (else where it will be).
+function siteAddress() {
+  SITE_URL = `${SITE_ROOT}${addressOf(sitePaths.livePath ?? sitePaths.path ?? 'index.html')}`;
+  $('view-site').href = SITE_URL;
+}
+
+// A published page whose path was changed stays where it is until it is published again.
+function showPathNote() {
+  const moving = sitePaths.livePath !== null && sitePaths.livePath !== sitePaths.path;
+  $('page-path-note').hidden = !moving;
+  $('page-path-note').textContent = moving ? `公開中は ${sitePaths.livePath}。次の公開で移ります` : '';
 }
 
 // The description is one line on the server: line breaks typed here become spaces.
@@ -1268,7 +1296,42 @@ function showDescriptionCount() {
   $('page-description-open').classList.toggle('filled', n > 0);
 }
 
+async function saveSiteMeta() {
+  const title = cleanTitle($('page-title').value);
+  const path = cleanPath($('page-path').value);
+  if (!title) {
+    status('題名は 1 行で、120 文字までにしてください', 'error');
+    return;
+  }
+  if (!path) {
+    status('書き出し先は、英小文字・数字・ハイフンの名前を「/」でつないで書いてください（例: exhibitors.html、en/index.html）', 'error');
+    return;
+  }
+  const res = await postJson(`../api/pages/${pageId}/meta`, { title, path, description: descriptionValue() });
+  if (!res.ok) {
+    const why = {
+      'path-taken': `書き出し先「${path}」は、ほかのページが使っています（削除したページを含みます）`,
+      'invalid-path': '書き出し先に使えない名前です',
+      'invalid-description': '説明文は 300 文字までにしてください',
+    }[res.reason];
+    status(why ?? serverMessage(res, '題名と書き出し先を保存できませんでした'), 'error');
+    return;
+  }
+  $('page-path').value = path;
+  sitePaths.path = path;
+  showPathNote();
+  // A new path makes "公開" pressable even when the content is the one published.
+  showSaveState(restingSaveState());
+  document.title = `${title} – エディタ`;
+  const moving = sitePaths.livePath !== null && sitePaths.livePath !== path;
+  status(moving ? `保存しました。書き出し先は、次に公開したときに ${path} へ移ります` : saving.publishedSource !== null ? '題名・書き出し先・説明文を保存しました。公開中のページにも出ています' : '題名・書き出し先・説明文を保存しました', 'ok');
+}
+
 async function saveMeta() {
+  if (siteMode) {
+    await saveSiteMeta();
+    return;
+  }
   const title = cleanTitle($('page-title').value);
   const date = $('page-date').value;
   if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -1285,6 +1348,7 @@ async function saveMeta() {
 }
 $('page-title').addEventListener('change', saveMeta);
 $('page-date').addEventListener('change', saveMeta);
+$('page-path').addEventListener('change', saveMeta);
 $('page-description').addEventListener('input', showDescriptionCount);
 $('page-description').addEventListener('change', saveMeta);
 
@@ -1413,15 +1477,24 @@ async function publish() {
   if (!res.ok) {
     if (res.reason === 'blocked') status(WAF_HELP, 'error');
     else if (res.reason === 'network') status('サーバーにつながらないため、公開できませんでした。つながってからもう一度押してください', 'error');
+    // A file this editor did not write is never replaced (site.md §4).
+    else if (res.reason === 'path-occupied') status(`書き出し先（${res.path ?? ''}）に、このエディタで書いていないファイルがあるため公開できません。書き出し先を変えるか、サイトの管理者に相談してください`, 'error');
     else status(serverMessage(res, '公開できませんでした。もう一度押してください'), 'error');
     return;
   }
   saving.publishedSource = source;
+  // A site's page is now written at its path (site.md §3).
+  if (siteMode && !isPart(pageId) && sitePaths.path !== null) {
+    sitePaths.livePath = sitePaths.path;
+    showPathNote();
+    siteAddress();
+  }
   showSaveState(restingSaveState());
   renderHistory();
   const actions = [{ label: '公開を取り消す', run: () => undoPublish(res.version.id) }];
   if (serverMode) actions.push({ label: 'サイトを見る', run: () => window.open(SITE_URL, '_blank', 'noopener') });
-  status(`公開しました（${clock.format(res.version.at)}）`, 'ok', actions);
+  const what = siteMode && isPart(pageId) ? '公開しました。公開中のすべてのページに入りました' : '公開しました';
+  status(`${what}（${clock.format(res.version.at)}）`, 'ok', actions);
 }
 
 async function undoPublish(versionId) {
@@ -1431,9 +1504,15 @@ async function undoPublish(versionId) {
     return;
   }
   saving.publishedSource = res.published ? await store.getVersion(res.published.id) : null;
+  if (siteMode && !isPart(pageId) && !res.published) {
+    sitePaths.livePath = null;
+    showPathNote();
+    siteAddress();
+  }
   showSaveState(restingSaveState());
   renderHistory();
-  status(res.published ? '公開を取り消しました。公開中のページは前の内容に戻りました' : '公開を取り消しました。このページは公開されていません', 'ok');
+  if (siteMode && isPart(pageId)) status(res.published ? '公開を取り消しました。すべてのページが前の内容に戻りました' : '公開を取り消しました。どのページにも入っていません', 'ok');
+  else status(res.published ? '公開を取り消しました。公開中のページは前の内容に戻りました' : '公開を取り消しました。このページは公開されていません', 'ok');
 }
 
 $('publish').addEventListener('click', publish);
@@ -1598,13 +1677,27 @@ if (ping?.wge === 1 && ping.blog === true && pageId === 'top') {
 }
 // Behind a front, the published site is served on its own origin and the API says where (server.md §6).
 const SITE_ROOT = typeof ping?.siteUrl === 'string' && /^https?:\/\//.test(ping.siteUrl) ? ping.siteUrl.replace(/\/?$/, '/') : '../site/';
-const SITE_URL = pageId === 'top' ? SITE_ROOT : `${SITE_ROOT}${pageId}/`;
+// A site's page is seen where it is written; its header and footer from the top page (site.md).
+let SITE_URL = pageId === 'top' ? SITE_ROOT : `${SITE_ROOT}${pageId}/`;
+siteMode = ping?.wge === 1 && ping.site === true;
+const siteName = siteMode && typeof ping.siteName === 'string' ? ping.siteName : '';
+if (siteMode) {
+  $('posts-link').textContent = 'ページの一覧';
+  if (isPart(pageId)) {
+    SITE_URL = SITE_ROOT;
+    const name = pageId === HEADER ? 'ヘッダー' : 'フッター';
+    $('page-name').textContent = `${name}（すべてのページに共通）`;
+    document.title = `${name} – エディタ`;
+  }
+}
 $('view-site').href = SITE_URL;
+// A site's header, footer and first page start from a short page of their own, not the sample.
+const firstSource = !siteMode ? sample : isPart(pageId) ? partTemplate(pageId, siteName) : postTemplate(siteName || 'トップページ');
 let page;
 if (ping?.wge === 1) {
   try {
     const remote = createHttpStore('../api', pageId);
-    page = await remote.load(sample);
+    page = await remote.load(firstSource);
     store = remote;
     serverMode = true;
   } catch (e) {
@@ -1625,6 +1718,7 @@ if (serverMode) {
   // "サンプルに戻す" is for trying the editor alone; on the server it would replace a real page.
   $('reset').hidden = true;
   if (page.meta) showMeta(page.meta);
+  if (siteMode && !isPart(pageId)) siteAddress();
 }
 if (!page) {
   const legacy = storage.getItem(LEGACY_KEY);

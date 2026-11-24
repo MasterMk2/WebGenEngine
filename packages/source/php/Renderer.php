@@ -220,12 +220,14 @@ final class Renderer
      * @param array<string, mixed> $head the description and the page's address for search and
      *   sharing (rendering.md §5): description, url and image (absolute), type ("website" or
      *   "article"), siteName
+     * @param Document|null $header,$footer the site's header and footer (site.md §5), around <main>
      */
-    public function renderPage(Document $doc, string $title, string $lang = 'ja', string $stylesheetHref = 'style.css', bool $trustRaw = false, array $head = []): string
+    public function renderPage(Document $doc, string $title, string $lang = 'ja', string $stylesheetHref = 'style.css', bool $trustRaw = false, array $head = [], ?Document $header = null, ?Document $footer = null): string
     {
         if (preg_match(self::LANG, $lang) !== 1) {
             throw new RenderError('E_LANG', 'lang', '使えない言語コードです');
         }
+        $part = fn (string $tag, string $class, ?Document $d): array => $d === null ? [] : ['<' . $tag . ' class="' . $class . '">', $this->renderFragment($d, '  ', $trustRaw) . '</' . $tag . '>'];
         return implode("\n", [
             '<!doctype html>',
             '<html lang="' . $lang . '">',
@@ -237,8 +239,10 @@ final class Renderer
             '<link rel="stylesheet" href="' . self::escapeAttr($stylesheetHref) . '">',
             '</head>',
             '<body>',
+            ...$part('header', 'wge-site-header', $header),
             '<main class="wge-page">',
             $this->renderFragment($doc, '  ', $trustRaw) . '</main>',
+            ...$part('footer', 'wge-site-footer', $footer),
             '</body>',
             '</html>',
             '',

@@ -88,6 +88,10 @@ a:focus-visible { outline: 2px solid var(--wge-color-primary); outline-offset: 2
 .wge-ratio-4-3 { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
 .wge-ratio-16-9 { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
 
+/* The site's header and footer (site.md §5): set apart from the page by a line. */
+.wge-site-header { border-block-end: 1px solid var(--wge-color-subtle); }
+.wge-site-footer { border-block-start: 1px solid var(--wge-color-subtle); }
+
 /* Heading sizes that read well on a phone and on a computer (2026-11-24). */
 h1.wge-heading { font-size: clamp(1.375rem, 5.6vw, 1.875rem); }
 h2.wge-heading { font-size: clamp(1.1875rem, 5vw, 1.4375rem); }

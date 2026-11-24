@@ -16,6 +16,9 @@
     <input id="page-title" maxlength="120" autocomplete="off" title="題名（一覧とブラウザのタブに出ます）">
     <label class="sr-only" for="page-date">日付</label>
     <input id="page-date" type="date" title="記事の日付（一覧はこの順に並びます）">
+    <label class="sr-only" for="page-path">書き出し先</label>
+    <input id="page-path" maxlength="200" autocomplete="off" spellcheck="false" hidden title="書き出し先（サイトの中の場所）。変えると、次に公開したときに移ります">
+    <span class="page-path-note" id="page-path-note" hidden></span>
     <button type="button" id="page-description-open" popovertarget="page-description-pop" title="検索結果や SNS で題名の下に出る文">説明文</button>
     <div popover id="page-description-pop" class="description-pop">
       <label for="page-description">説明文</label>

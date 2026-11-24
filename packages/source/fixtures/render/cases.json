@@ -136,6 +136,24 @@
   {"name": "page head: a script address for the picture", "source": "", "page": {"title": "t", "head": {"url": "https://a.example/", "image": "javascript:alert(1)"}}, "renderError": {"code": "E_HEAD", "key": "head.image"}},
   {"name": "page head: an address with a quote", "source": "", "page": {"title": "t", "head": {"url": "https://a.example/\"x"}}, "renderError": {"code": "E_HEAD", "key": "head.url"}},
   {"name": "page head: an address ending in a line break", "source": "", "page": {"title": "t", "head": {"url": "https://a.example/\n"}}, "renderError": {"code": "E_HEAD", "key": "head.url"}},
+  {
+    "name": "page with the site's header and footer",
+    "source": "<Text>本文</Text>\n",
+    "page": {"title": "t", "head": {"description": "説明"}, "header": "<Section padding=\"sm\">\n  <Text>合成の祭</Text>\n</Section>\n", "footer": "<Text size=\"sm\">© 合成</Text>\n"},
+    "pageHtml": "<!doctype html>\n<html lang=\"ja\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>t</title>\n<meta name=\"description\" content=\"説明\">\n<link rel=\"stylesheet\" href=\"style.css\">\n</head>\n<body>\n<header class=\"wge-site-header\">\n  <section class=\"wge-section wge-padding-sm\">\n    <p class=\"wge-text\">合成の祭</p>\n  </section>\n</header>\n<main class=\"wge-page\">\n  <p class=\"wge-text\">本文</p>\n</main>\n<footer class=\"wge-site-footer\">\n  <p class=\"wge-text wge-size-sm\">© 合成</p>\n</footer>\n</body>\n</html>\n"
+  },
+  {
+    "name": "page with an empty header and no footer",
+    "source": "",
+    "page": {"title": "t", "header": ""},
+    "pageHtml": "<!doctype html>\n<html lang=\"ja\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>t</title>\n<link rel=\"stylesheet\" href=\"style.css\">\n</head>\n<body>\n<header class=\"wge-site-header\">\n</header>\n<main class=\"wge-page\">\n</main>\n</body>\n</html>\n"
+  },
+  {
+    "name": "the footer's Html is sanitized as the page's is",
+    "source": "",
+    "page": {"title": "t", "footer": "<!-- 注 -->\n<Html><b>太</b><script>alert(1)</script></Html>\n"},
+    "pageHtml": "<!doctype html>\n<html lang=\"ja\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>t</title>\n<link rel=\"stylesheet\" href=\"style.css\">\n</head>\n<body>\n<main class=\"wge-page\">\n</main>\n<footer class=\"wge-site-footer\">\n  <b>太</b>\n</footer>\n</body>\n</html>\n"
+  },
   {"name": "page head: an unknown type", "source": "", "page": {"title": "t", "head": {"type": "video"}}, "renderError": {"code": "E_HEAD", "key": "head.type"}},
   {"name": "page head: a description that is not text", "source": "", "page": {"title": "t", "head": {"description": 3}}, "renderError": {"code": "E_HEAD", "key": "head.description"}},
   {"name": "page head: an unknown item", "source": "", "page": {"title": "t", "head": {"keywords": "a"}}, "renderError": {"code": "E_HEAD", "key": "head.keywords"}},
