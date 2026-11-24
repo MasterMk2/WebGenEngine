@@ -1084,7 +1084,7 @@ function renderProps() {
     panel.append(field(ATTRS_OF[node.type]?.[attr.name] ?? ATTRS[attr.name] ?? attr.name, attr.name, control));
   }
   if (node.type === 'Image' && serverMode) panel.append(uploadControl(path));
-  if (node.type === 'Button' && serverMode) panel.append(documentControl(path, node));
+  if (node.type === 'Button' && serverMode) panel.append(documentControl(path));
   if (node.type === 'Table' || node.type === 'Row') {
     const tablePath = node.type === 'Table' ? path : path.slice(0, -1);
     const actions = document.createElement('div');
@@ -1542,7 +1542,7 @@ function uploadControl(path) {
 // A PDF for a button to open (rendering.md §7.4): sent as it is, up to the same size as an image.
 // A button still saying the template's "ボタン" is named after the file, so it never reads as
 // a bare "ボタン" on the page; any other wording is the writer's and stays.
-function documentControl(path, node) {
+function documentControl(path) {
   const wrap = document.createElement('div');
   wrap.className = 'field upload';
   const input = document.createElement('input');
@@ -1564,7 +1564,10 @@ function documentControl(path, node) {
       status(serverMessage(res, why ?? 'PDF を送れませんでした。もう一度選んでください'), 'error');
       return;
     }
-    const plain = node.children?.length === 1 && node.children[0].type === 'text' && node.children[0].value === 'ボタン';
+    // Read now: the panel is not rebuilt when only the words change, so a node kept from
+    // when it was built could still say "ボタン" after the writer has retyped them.
+    const node = nodeAt(state.doc, path);
+    const plain = node?.type === 'Button' && node.children?.length === 1 && node.children[0].type === 'text' && node.children[0].value === 'ボタン';
     const label = file.name.replace(/\.pdf$/i, '').trim();
     apply((doc) => {
       sf.edit.setProp(doc, path, 'href', res.src);
