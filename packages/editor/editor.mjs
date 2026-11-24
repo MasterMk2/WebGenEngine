@@ -25,11 +25,14 @@ const sf = createSourceFormat(schema);
 const renderer = createRenderer(schema, theme, baseCss);
 const components = new Map(schema.components.map((c) => [c.name, c]));
 
-const NAMES = { Section: '区画', Stack: '並び', Grid: '格子', Heading: '見出し', Text: '文章', Button: 'ボタン', Image: '画像', Embed: '地図・埋め込み', Html: 'HTML', document: 'ページ' };
+const NAMES = {
+  Section: '区画', Stack: '並び', Grid: '格子', Heading: '見出し', Text: '文章', Button: 'ボタン', Image: '画像', Embed: '地図・埋め込み',
+  Table: '表', Row: '行', HeaderCell: '見出しのセル', Cell: 'セル', Html: 'HTML', document: 'ページ',
+};
 const ATTRS = {
   padding: '上下の余白', background: '背景', width: '中身の幅', direction: '向き', align: '揃え', justify: '並びの配置',
   gap: '間隔', wrap: '折り返し', columns: '列の数', level: '見出しの段階', size: '文字の大きさ', href: 'リンク先',
-  variant: '種類', src: '画像の場所', alt: '代わりの文', ratio: '縦横の比', surface: '囲み',
+  variant: '種類', src: '画像の場所', alt: '代わりの文', ratio: '縦横の比', surface: '囲み', scope: '何の見出しか',
 };
 // Where one name means something else on a component (a picture's own size, not a layout width).
 const ATTRS_OF = { Image: { width: '元の幅（px）', height: '元の高さ（px）' }, Embed: { src: '埋め込む場所', title: '中身の説明（読み上げ用）' } };
@@ -37,7 +40,7 @@ const VALUES = {
   vertical: '縦', horizontal: '横', start: '先頭側', center: '中央', end: '末尾側', stretch: '伸ばす', between: '両端',
   true: 'する', false: 'しない', none: 'なし', subtle: '薄い色', primary: '主な色', inverse: '反転', secondary: '控えめ',
   narrow: '狭い', normal: '標準', wide: '広い', full: '全幅', auto: '元のまま', sm: '小', md: '中', lg: '大',
-  card: 'カード', notice: 'お知らせ枠',
+  card: 'カード', notice: 'お知らせ枠', row: 'この行の見出し', col: 'この列の見出し',
 };
 const TEMPLATES = {
   Section: { type: 'Section', props: { padding: 'lg' }, children: [] },
@@ -57,6 +60,15 @@ const TEMPLATES = {
   ] },
 };
 TEMPLATES.Embed = { type: 'Embed', props: { src: 'https://www.google.com/maps/embed?pb=', title: '地図' } };
+// A table starts as two rows of a header cell and a cell (the most common: an outline of facts).
+const headed = (head, body) => ({ type: 'Row', props: {}, children: [
+  { type: 'HeaderCell', props: { scope: 'row' }, children: [{ type: 'text', value: head }] },
+  { type: 'Cell', props: {}, children: [{ type: 'text', value: body }] },
+] });
+TEMPLATES.Table = { type: 'Table', props: {}, children: [headed('項目', '内容'), headed('項目', '内容')] };
+TEMPLATES.Row = headed('項目', '内容'); // replaced by a row shaped like the table's last (rowLike)
+TEMPLATES.HeaderCell = { type: 'HeaderCell', props: { scope: 'row' }, children: [{ type: 'text', value: '項目' }] };
+TEMPLATES.Cell = { type: 'Cell', props: {}, children: [{ type: 'text', value: '内容' }] };
 const PRESET_NAMES = { Card: 'カード', Notice: 'お知らせ枠' };
 const LEGACY_KEY = 'wge-editor-source'; // the single slot the prototype used before the page store
 const PREVIEW_CSS = `
@@ -66,6 +78,9 @@ const PREVIEW_CSS = `
 .wge-heading, .wge-text, .wge-button { cursor: text; }
 [contenteditable] { outline: none; cursor: text; }
 .wge-text:empty, .wge-heading:empty { min-height: 1.5em; }
+/* An empty row or cell keeps room to click on. */
+.wge-table tr:empty { height: 2em; outline: 1px dashed #9aa3ad; outline-offset: -2px; }
+.wge-table :is(th, td):empty { min-width: 3em; height: 1.7em; }
 /* Room above the first block for the toolbar of the selected block (placeBlockbar). */
 body { padding-top: 44px; }
 `;
@@ -105,7 +120,10 @@ function nodeAt(doc, path) {
   return n;
 }
 const kindOf = (node) => (node.type === 'document' ? 'container' : components.get(node.type)?.kind);
-const axisOf = (node) => (node.type === 'Grid' || (node.type === 'Stack' && node.props.direction === 'horizontal') ? 'flow' : 'vertical');
+const axisOf = (node) => (node.type === 'Grid' || node.type === 'Row' || (node.type === 'Stack' && node.props.direction === 'horizontal') ? 'flow' : 'vertical');
+const range = (from, to) => Array.from({ length: Math.max(0, to - from) }, (_, i) => from + i);
+// A block's own children in the preview: a table's rows stand in the <tbody> the renderer writes.
+const childBlocks = (el) => [...(el.matches('table') && el.tBodies[0] ? el.tBodies[0] : el).children].filter((c) => c.matches('[data-wge-path]'));
 
 // `actions` ({ label, run } or a list of them) adds buttons after the message, such as "元に戻す".
 function status(message, tone = '', actions = []) {
@@ -321,13 +339,15 @@ function dropTarget(from, point) {
     const path = parsePath(el.dataset.wgePath);
     const node = nodeAt(state.doc, path);
     if (!node || kindOf(node) !== 'container' || isPrefix(from, path)) return false;
+    // A dragged block goes only where it may stand (a cell in a row, a row in a table).
+    if (from !== NO_SOURCE && !placeable(node.type, nodeAt(state.doc, from)?.type)) return false;
     if (path.length === 0) return true;
     return !nearEdge(axisOf(nodeAt(state.doc, path.slice(0, -1))), el.getBoundingClientRect(), point);
   });
   containerEl ??= previewDoc().querySelector('main');
   const parent = parsePath(containerEl.dataset.wgePath);
   const node = nodeAt(state.doc, parent);
-  const kids = [...containerEl.children].filter((el) => el.matches('[data-wge-path]'));
+  const kids = childBlocks(containerEl);
   const rects = kids.map((el) => el.getBoundingClientRect());
   const axis = axisOf(node);
   const k = slotIndex(axis, rects, point);
@@ -716,11 +736,13 @@ function renderBlockbar() {
   handle.addEventListener('pointerdown', startHandleDrag);
 
   // The trail replaces "select the parent": each step selects that block. Long trails
-  // keep the first step and the last two.
+  // keep the first step and the last two, and the table a cell or a row is in (for its buttons).
   const crumbs = document.createElement('span');
   crumbs.className = 'crumbs';
   const types = trailTypes(path);
-  const shown = types.length > 4 ? [0, null, types.length - 2, types.length - 1] : types.map((_, i) => i);
+  const table = types.lastIndexOf('Table');
+  const tail = table > 0 && table < types.length - 2 ? [table, ...range(table + 1, types.length)] : [types.length - 2, types.length - 1];
+  const shown = types.length > 4 ? [0, ...(tail[0] > 1 ? [null] : []), ...tail] : types.map((_, i) => i);
   shown.forEach((i, n) => {
     if (n > 0) {
       const sep = document.createElement('span');
@@ -760,13 +782,14 @@ function renderBlockbar() {
 
 // Above the block when there is room, else below it, so the toolbar never covers what is selected
 // (a title being typed, at the top of the page). Only a block taller than the view, with no room
-// above nor below, gets it just inside its top edge.
+// above nor below, gets it just inside its top edge. A row or a cell is short and has neighbours
+// right above it, so its toolbar goes by the whole table instead and never covers another cell.
 function placeBlockbar(el) {
   if (!el) {
     blockbar.hidden = true;
     return;
   }
-  const r = el.getBoundingClientRect();
+  const r = (el.closest('table') ?? el).getBoundingClientRect();
   const height = overlay.clientHeight;
   if (r.bottom < 0 || r.top > height) {
     blockbar.hidden = true;
@@ -840,21 +863,28 @@ insertPoint.addEventListener('pointerleave', (e) => {
 });
 
 // The menu lists the everyday blocks first; the boxes for layout come after a rule.
-const MENU = [['Heading', 'Text', 'Image', 'Button'], ['Card', 'Notice', 'Embed'], ['Section', 'Stack', 'Grid']];
+// The parts of a table come last: in a table only a row fits, in a row only cells (the schema's rules).
+const MENU = [['Heading', 'Text', 'Image', 'Button'], ['Card', 'Notice', 'Embed', 'Table'], ['Section', 'Stack', 'Grid'], ['Row', 'HeaderCell', 'Cell']];
 let menuTarget = null;
 
-MENU.forEach((names, i) => {
-  if (i > 0) insertMenu.append(document.createElement('hr'));
-  for (const name of names) {
-    const b = button(PRESET_NAMES[name] ?? NAMES[name], () => insertBlock(name));
-    b.setAttribute('role', 'menuitem');
-    insertMenu.append(b);
-  }
-});
+// Only what may stand in the target is offered (source-format.md §4.1).
+function fillInsertMenu(parentType) {
+  insertMenu.replaceChildren();
+  const groups = MENU.map((names) => names.filter((name) => placeable(parentType, TEMPLATES[name].type))).filter((g) => g.length > 0);
+  groups.forEach((names, i) => {
+    if (i > 0) insertMenu.append(document.createElement('hr'));
+    for (const name of names) {
+      const b = button(PRESET_NAMES[name] ?? NAMES[name], () => insertBlock(name));
+      b.setAttribute('role', 'menuitem');
+      insertMenu.append(b);
+    }
+  });
+}
 
 function openInsertMenu(target, anchor) {
   menuTarget = { parent: target.parent, index: target.index };
   state.insertAt = null;
+  fillInsertMenu(nodeAt(state.doc, target.parent).type);
   insertMenu.hidden = false;
   const wrap = frameWrap.getBoundingClientRect();
   const a = anchor.getBoundingClientRect();
@@ -879,9 +909,52 @@ function insertBlock(name) {
   closeInsertMenu();
   if (!target) return;
   const path = [...target.parent, target.index];
-  if (!apply((doc) => sf.edit.insert(doc, target.parent, target.index, structuredClone(TEMPLATES[name])), path)) return;
+  // A new row takes the shape of the table's last one.
+  const node = name === 'Row' ? rowLike(nodeAt(state.doc, target.parent)) : structuredClone(TEMPLATES[name]);
+  if (!apply((doc) => sf.edit.insert(doc, target.parent, target.index, node), path)) return;
   // A new heading or paragraph starts with its placeholder selected, so typing replaces it.
-  if (components.get(TEMPLATES[name].type).kind === 'text') afterLoad = () => startEditing(path, null, { selectAll: true });
+  if (components.get(node.type).kind === 'text') afterLoad = () => startEditing(path, null, { selectAll: true });
+  else if (node.type === 'Row' && node.children.length > 0) afterLoad = () => startEditing([...path, 0], null, { selectAll: true });
+}
+
+// ------------------------------------------------------------------ tables
+
+// Whether a block of `type` may stand in `parentType`: the schema's "children" and "parents".
+function placeable(parentType, type) {
+  const parent = components.get(parentType);
+  const comp = components.get(type);
+  if (!comp) return true;
+  if (parent?.children && !parent.children.includes(type)) return false;
+  return !comp.parents || comp.parents.includes(parentType);
+}
+
+const cellLike = (cell, i) => (cell?.type === 'HeaderCell'
+  ? { type: 'HeaderCell', props: { ...cell.props }, children: [{ type: 'text', value: cell.props.scope === 'col' ? '見出し' : '項目' }] }
+  : { type: 'Cell', props: {}, children: [{ type: 'text', value: i === 0 ? '項目' : '内容' }] });
+
+// A new row shaped like the table's last row (its header cells stay header cells).
+function rowLike(table) {
+  const last = [...(table.children ?? [])].reverse().find((c) => c.type === 'Row');
+  const cells = last?.children.filter((c) => c.type !== 'comment') ?? [];
+  return { type: 'Row', props: {}, children: (cells.length > 0 ? cells : [null, null]).map((c, i) => cellLike(c?.type === 'HeaderCell' && c.props.scope === 'col' ? { ...c, type: 'Cell' } : c, i)) };
+}
+
+// Adds a row at the end, adds a cell to the end of every row, or takes the last cell off every row.
+function tableEdit(path, what) {
+  const table = nodeAt(state.doc, path);
+  const rows = table.children.map((c, i) => [c, i]).filter(([c]) => c.type === 'Row');
+  apply((doc) => {
+    if (what === 'row') sf.edit.insert(doc, path, table.children.length, rowLike(table));
+    for (const [row, i] of what === 'row' ? [] : rows) {
+      const cells = row.children.filter((c) => c.type !== 'comment');
+      if (what === 'column') {
+        const allHeads = cells.length > 0 && cells.every((c) => c.type === 'HeaderCell' && c.props.scope === 'col');
+        sf.edit.insert(doc, [...path, i], row.children.length, allHeads ? cellLike(cells[0], 1) : cellLike(null, 1));
+      } else if (cells.length > 1) {
+        sf.edit.remove(doc, [...path, i, row.children.lastIndexOf(cells.at(-1))]);
+      }
+    }
+  }, path);
 }
 
 insertMenu.addEventListener('keydown', (e) => {
@@ -1011,6 +1084,21 @@ function renderProps() {
     panel.append(field(ATTRS_OF[node.type]?.[attr.name] ?? ATTRS[attr.name] ?? attr.name, attr.name, control));
   }
   if (node.type === 'Image' && serverMode) panel.append(uploadControl(path));
+  if (node.type === 'Table' || node.type === 'Row') {
+    const tablePath = node.type === 'Table' ? path : path.slice(0, -1);
+    const actions = document.createElement('div');
+    actions.className = 'table-actions';
+    actions.append(
+      button('行を足す', () => tableEdit(tablePath, 'row')),
+      button('列を足す', () => tableEdit(tablePath, 'column')),
+      button('最後の列を消す', () => tableEdit(tablePath, 'drop-column')),
+    );
+    panel.append(actions);
+    const note = document.createElement('p');
+    note.className = 'note';
+    note.textContent = 'セルの文字は、プレビューのセルをクリックしてそのまま書けます。行やセルを 1 つ足すときは、選んだときに出る ＋ を使います。表の中には行だけ、行の中にはセルだけを置けます。';
+    panel.append(note);
+  }
   if (node.type === 'Embed') {
     const note = document.createElement('p');
     note.className = 'note';

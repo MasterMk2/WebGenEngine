@@ -194,6 +194,8 @@ button.danger { color: var(--danger); }
 }
 .field textarea { min-height: 4.5em; resize: vertical; }
 .note { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+.table-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.table-actions button { min-height: 32px; }
 
 .source-pane { flex: 1 1 0; display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
 .pane-head { display: flex; justify-content: space-between; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--line); color: var(--muted); }

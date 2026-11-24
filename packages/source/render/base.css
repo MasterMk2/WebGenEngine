@@ -81,6 +81,13 @@ small { font-size: var(--wge-font-size-sm); }
 .wge-embed-ratio-1-1 { aspect-ratio: 1 / 1; }
 .wge-embed-ratio-3-4 { aspect-ratio: 3 / 4; }
 
+/* A table (rendering.md §7.3): full width, rows ruled apart, a header cell on a tinted ground.
+   Long words wrap (body's overflow-wrap), so a few columns fit a phone without widening the page. */
+.wge-table { width: 100%; border-collapse: collapse; }
+.wge-table :is(th, td) { padding: var(--wge-space-sm) var(--wge-space-md); border-block-end: 1px solid var(--wge-color-subtle); text-align: start; vertical-align: top; }
+.wge-table th { background: var(--wge-color-subtle); font-weight: 600; }
+.wge-table th[scope="row"] { width: 30%; min-width: 6em; }
+
 /* The site's header and footer (site.md §5): set apart from the page by a line. */
 .wge-site-header { border-block-end: 1px solid var(--wge-color-subtle); }
 .wge-site-footer { border-block-start: 1px solid var(--wge-color-subtle); }

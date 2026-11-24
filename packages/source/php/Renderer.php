@@ -185,7 +185,10 @@ final class Renderer
             return ($comp['render']['close'] ?? false) ? $open . '</' . $tag . '>' : $open;
         }
         if ($comp['kind'] === 'container') {
-            $inner = $indent . '  ';
+            // "inner" wraps the children in one more element (a table's rows in <tbody>, which
+            // browsers add anyway), so the page's elements are the ones written.
+            $wrap = $comp['render']['inner'] ?? null;
+            $inner = $indent . ($wrap !== null ? '    ' : '  ');
             $kids = [];
             foreach ($node->children as $c) {
                 $s = $this->renderNode($c, $inner, $trustRaw);
@@ -194,11 +197,14 @@ final class Renderer
                 }
             }
             if ($kids === []) {
-                return $open . '</' . $tag . '>';
+                return $wrap !== null ? $open . "<{$wrap}></{$wrap}></{$tag}>" : $open . '</' . $tag . '>';
             }
-            $out = $open;
+            $out = $wrap !== null ? $open . "\n" . $indent . "  <{$wrap}>" : $open;
             foreach ($kids as $k) {
                 $out .= "\n" . $inner . $k;
+            }
+            if ($wrap !== null) {
+                $out .= "\n" . $indent . "  </{$wrap}>";
             }
             return $out . "\n" . $indent . '</' . $tag . '>';
         }

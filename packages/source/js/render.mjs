@@ -148,8 +148,15 @@ export function createRenderer(schema, theme, baseCss) {
     // An element that HTML does not leave open (iframe) still gets its end tag.
     if (comp.kind === 'void' || comp.kind === 'inline-void') return comp.render.close ? `${open}</${tag}>` : open;
     if (comp.kind === 'container') {
-      const inner = indent + '  ';
+      // `inner` wraps the children in one more element (a table's rows in <tbody>, which browsers
+      // add anyway), so the page's elements are the ones written.
+      const wrap = comp.render.inner;
+      const inner = indent + (wrap ? '    ' : '  ');
       const kids = node.children.map((c, i) => renderNode(c, inner, path && [...path, i], trustRaw)).filter((s) => s !== null);
+      if (wrap) {
+        if (kids.length === 0) return `${open}<${wrap}></${wrap}></${tag}>`;
+        return `${open}\n${indent}  <${wrap}>` + kids.map((k) => `\n${inner}${k}`).join('') + `\n${indent}  </${wrap}>\n${indent}</${tag}>`;
+      }
       if (kids.length === 0) return `${open}</${tag}>`;
       return open + kids.map((k) => `\n${inner}${k}`).join('') + `\n${indent}</${tag}>`;
     }

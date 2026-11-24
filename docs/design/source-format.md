@@ -50,8 +50,8 @@ sh php/run-docker.sh php:8.3-apache php:8.5-cli-alpine
 
 | 種類 | 部品 | 中身 |
 |---|---|---|
-| `container` | Section、Stack、Grid | ブロックの部品とコメント。空白以外の文字は書けない（`E_TEXT_IN_BLOCK`） |
-| `text` | Heading、Text、Button | 文（文字とインラインの部品） |
+| `container` | Section、Stack、Grid、Table、Row | ブロックの部品とコメント。空白以外の文字は書けない（`E_TEXT_IN_BLOCK`） |
+| `text` | Heading、Text、Button、HeaderCell、Cell | 文（文字とインラインの部品） |
 | `void` | Image、Embed | なし。必ず `/>` で閉じる（`E_VOID_NOT_SELF_CLOSED`） |
 | `raw` | Html | `</Html>` までの文字をそのまま持つ。中身は解釈しない（R4 の「GUI では中身を編集しない箱」）。スキーマで `trusted` を付けてあり、将来は管理者だけが書けるようにする（§3.4） |
 | `inline` | Link、Strong、Em、Small | 文 |
@@ -60,6 +60,13 @@ sh php/run-docker.sh php:8.3-apache php:8.5-cli-alpine
 - ページの最上位は `container` と同じ規則で、ブロックの部品を並べる
 - ブロックの場所にインラインの部品を、文の中にブロックの部品を置くとエラー（`E_NOT_ALLOWED_HERE`）。スキーマの `excludes` に挙げた部品も中に置けない（Link の中の Link、Button の中の Link）
 - 中身のない部品は `/>` で閉じてもよい（`<Stack gap="md" />`）
+
+### 4.1 置ける場所の決まり（2026-11-25）
+
+- スキーマの部品に `children`（中に置ける部品の名前）と `parents`（置ける親の名前。ページは `document`）を書ける。どちらも無い部品は、今までどおりブロックの場所ならどこにでも置ける
+- 表：`Table` の中には `Row` だけ、`Row` の中には `HeaderCell` と `Cell` だけ。`Row` は `Table` の中だけ、セルは `Row` の中だけに置ける。コメントはどこにでも書ける
+- 外れたら `E_NOT_ALLOWED_HERE`（位置は部品の `<`）。編集操作の `insert`・`move` も同じ決まりで断る（足す部品の中の子も確かめる）
+- パーサー（JS・PHP）、編集操作、無作為テストの生成器、エディタの挿入の一覧とドラッグの行き先が、同じスキーマの定義を読む
 
 ## 5. 属性の値
 

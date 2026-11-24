@@ -83,9 +83,30 @@ function inline(depth, excluded) {
   return s;
 }
 
+// A table as its rules want it (rows of header cells and cells), with the spacing varied.
+function table(depth) {
+  const indent = '  '.repeat(depth + 1);
+  let s = `<Table${attrs(components.get('Table'))}>`;
+  const rows = Math.floor(rand() * 3);
+  for (let r = 0; r < rows; r++) {
+    s += pick(['\n' + indent, '\n', ' ']) + '<Row>';
+    const cells = Math.floor(rand() * 3);
+    for (let c = 0; c < cells; c++) {
+      const comp = chance(0.4) ? components.get('HeaderCell') : components.get('Cell');
+      s += pick(['\n' + indent + '  ', '']) + (chance(0.1) ? `<${comp.name}${attrs(comp)} />` : `<${comp.name}${attrs(comp)}>${inline(0, [])}</${comp.name}>`);
+    }
+    s += pick(['\n' + indent, '']) + '</Row>';
+  }
+  return s + pick(['\n' + '  '.repeat(depth), '']) + '</Table>';
+}
+const components = new Map(comps.map((c) => [c.name, c]));
+
 function block(depth) {
   if (chance(0.08)) return `<!--${pick([' メモ ', '', 'a\nb'])}-->`;
-  const comp = pick(byKind(depth > 3 ? ['text', 'void', 'raw'] : ['container', 'text', 'void', 'raw']));
+  let comp = pick(byKind(depth > 3 ? ['text', 'void', 'raw'] : ['container', 'text', 'void', 'raw']));
+  // Parts that stand only in a table appear out of place now and then (to see them refused).
+  while (comp.parents && chance(0.85)) comp = pick(byKind(['container', 'text', 'void', 'raw']));
+  if (comp.name === 'Table' && chance(0.85)) return table(depth);
   const open = `<${comp.name}${attrs(comp)}`;
   if (comp.kind === 'void') return open + pick(['/>', ' />']);
   if (comp.kind === 'raw') return `${open}>${pick(RAW)}${chance(0.5) ? pick(RAW) + pick(RAW) : ''}</Html>`;
@@ -134,6 +155,10 @@ function randomNode() {
     { type: 'Stack', props: { gap: 'sm' }, children: [{ type: 'Heading', props: { level: '2' }, children: [] }] },
     { type: 'Image', props: { src: '/n.png', alt: '<新>' } },
     { type: 'Embed', props: { src: pick(['/map/viewer.html?v=1', '//evil.example/x', 'https://www.google.com/maps/embed?pb=1']), title: '地図' } },
+    { type: 'Row', props: {}, children: [{ type: 'Cell', props: {}, children: [{ type: 'text', value: 'セル' }] }] },
+    { type: 'Cell', props: {}, children: [{ type: 'text', value: '新しいセル' }] },
+    { type: 'HeaderCell', props: { scope: 'row' }, children: [] },
+    { type: 'Table', props: {}, children: [{ type: 'Row', props: {}, children: [] }] },
     { type: 'comment', value: ' new ' },
     { type: 'comment', value: pick(['-', 'a\rb', 'a\r\nb']) },
     { type: 'Html', props: {}, raw: '<hr>' },
@@ -217,7 +242,7 @@ function result(source, ops) {
 // R4 on the published HTML: layout lives only in classes (no style attribute or
 // other attributes outside a fixed set), and every class has a CSS rule.
 // Raw Html blocks are the author's own markup, so they are left out of the check.
-const ALLOWED_ATTRS = new Set(['class', 'href', 'src', 'alt', 'width', 'height', 'loading', 'decoding', 'title']);
+const ALLOWED_ATTRS = new Set(['class', 'href', 'src', 'alt', 'width', 'height', 'loading', 'decoding', 'title', 'scope']);
 // An <iframe> loads only from the places schema.embedSources lists, and is always closed.
 const EMBED_SOURCES = schema.embedSources ?? [];
 const decodeAttr = (v) => v.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');

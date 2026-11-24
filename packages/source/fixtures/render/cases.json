@@ -173,6 +173,7 @@
     "source": "<Stack>\n  <Embed ratio=\"4:3\" title=\"会場の地図 &quot;合成&quot;\" src=\"https://www.google.com/maps/embed?pb=1&amp;z=2\" />\n  <Embed src=\"/map/viewer.html?v=1\" title=\"全体マップ\" />\n</Stack>\n",
     "html": "<div class=\"wge-stack\">\n  <iframe class=\"wge-embed wge-embed-ratio-4-3\" src=\"https://www.google.com/maps/embed?pb=1&amp;z=2\" title=\"会場の地図 &quot;合成&quot;\" loading=\"lazy\"></iframe>\n  <iframe class=\"wge-embed\" src=\"/map/viewer.html?v=1\" title=\"全体マップ\" loading=\"lazy\"></iframe>\n</div>\n"
   },
+  {"name": "a table: rows in <tbody>, a header cell with its scope, an empty table", "source": "<Table>\n  <Row>\n    <HeaderCell scope=\"col\">日</HeaderCell>\n    <HeaderCell scope=\"col\">企画</HeaderCell>\n  </Row>\n  <Row>\n    <HeaderCell scope=\"row\">1日目</HeaderCell>\n    <Cell>合成の企画<Br /><Small>（注）</Small></Cell>\n  </Row>\n</Table>\n<Table />\n", "html": "<table class=\"wge-table\">\n  <tbody>\n    <tr>\n      <th scope=\"col\">日</th>\n      <th scope=\"col\">企画</th>\n    </tr>\n    <tr>\n      <th scope=\"row\">1日目</th>\n      <td>合成の企画<br><small>（注）</small></td>\n    </tr>\n  </tbody>\n</table>\n<table class=\"wge-table\"><tbody></tbody></table>\n"},
   {"name": "default stylesheet", "stylesheet": "default.css"},
   {"name": "every class the schema can produce has a rule", "classCoverage": true},
   {"name": "theme: missing token", "themePatch": {"space": {"md": null}}, "renderError": {"code": "E_THEME", "key": "space.md"}},
