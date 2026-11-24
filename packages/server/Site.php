@@ -30,7 +30,8 @@ final class Site
     {
         foreach ($schema['components'] as $c) {
             foreach ($c['attributes'] as $a) {
-                if ($a['type'] === 'url') {
+                // An Embed's address of a page of this site (/map/viewer.html) is made relative too.
+                if ($a['type'] === 'url' || $a['type'] === 'embed') {
                     $this->urlAttributes[$c['name']][] = $a['name'];
                 }
             }

@@ -92,6 +92,17 @@ export function partTemplate(id, siteName) {
   return ['<Section padding="sm">', `  <Text size="sm">${name}</Text>`, '</Section>', ''].join('\n');
 }
 
+/**
+ * An Embed's place from what was typed or pasted: a map service gives a whole <iframe …>, so its
+ * src is taken out (with its &amp; read back as &). Anything else is the place as it was typed.
+ */
+export function embedSrcFrom(value) {
+  const text = String(value ?? '').trim();
+  const m = /<iframe\b[^>]*?\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(text);
+  if (!m) return text;
+  return (m[1] ?? m[2]).trim().replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+}
+
 /** "2026-11-23" → "2026年11月23日" */
 export function dateLabel(date) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date ?? '');

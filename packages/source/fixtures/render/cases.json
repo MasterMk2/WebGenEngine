@@ -168,6 +168,11 @@
     "source": "<Stack surface=\"card\" gap=\"sm\">\n  <Text>本文<Small>（注 <Link href=\"/a\">詳細</Link>）</Small></Text>\n</Stack>\n<Stack surface=\"notice\" />\n",
     "html": "<div class=\"wge-stack wge-gap-sm wge-surface-card\">\n  <p class=\"wge-text\">本文<small>（注 <a href=\"/a\">詳細</a>）</small></p>\n</div>\n<div class=\"wge-stack wge-surface-notice\"></div>\n"
   },
+  {
+    "name": "an embedded map and a page of this site, each closed",
+    "source": "<Stack>\n  <Embed ratio=\"4:3\" title=\"会場の地図 &quot;合成&quot;\" src=\"https://www.google.com/maps/embed?pb=1&amp;z=2\" />\n  <Embed src=\"/map/viewer.html?v=1\" title=\"全体マップ\" />\n</Stack>\n",
+    "html": "<div class=\"wge-stack\">\n  <iframe class=\"wge-embed wge-embed-ratio-4-3\" src=\"https://www.google.com/maps/embed?pb=1&amp;z=2\" title=\"会場の地図 &quot;合成&quot;\" loading=\"lazy\"></iframe>\n  <iframe class=\"wge-embed\" src=\"/map/viewer.html?v=1\" title=\"全体マップ\" loading=\"lazy\"></iframe>\n</div>\n"
+  },
   {"name": "default stylesheet", "stylesheet": "default.css"},
   {"name": "every class the schema can produce has a rule", "classCoverage": true},
   {"name": "theme: missing token", "themePatch": {"space": {"md": null}}, "renderError": {"code": "E_THEME", "key": "space.md"}},

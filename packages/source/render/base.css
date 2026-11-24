@@ -74,6 +74,13 @@ small { font-size: var(--wge-font-size-sm); }
 .wge-ratio-4-3 { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
 .wge-ratio-16-9 { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
 
+/* A map or a page of this site, set in the page (rendering.md §7.2): full width, at a set ratio. */
+.wge-embed { display: block; width: 100%; aspect-ratio: 16 / 9; border: 0; border-radius: var(--wge-radius); background: var(--wge-color-subtle); }
+.wge-embed-ratio-16-9 { aspect-ratio: 16 / 9; }
+.wge-embed-ratio-4-3 { aspect-ratio: 4 / 3; }
+.wge-embed-ratio-1-1 { aspect-ratio: 1 / 1; }
+.wge-embed-ratio-3-4 { aspect-ratio: 3 / 4; }
+
 /* The site's header and footer (site.md §5): set apart from the page by a line. */
 .wge-site-header { border-block-end: 1px solid var(--wge-color-subtle); }
 .wge-site-footer { border-block-start: 1px solid var(--wge-color-subtle); }

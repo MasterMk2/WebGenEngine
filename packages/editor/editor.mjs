@@ -8,7 +8,7 @@ import { slotIndex, slotGuide, nearEdge, moveArgs } from './slots.mjs';
 import { inlineFromDom } from './inline-dom.mjs';
 import { createPageStore } from './store.mjs';
 import { createHttpStore } from './http-store.mjs';
-import { addressOf, cleanPath, cleanTitle, fitWithin, HEADER, isPart, PAGE_ID, partTemplate, postTemplate } from './posts-core.mjs';
+import { addressOf, cleanPath, cleanTitle, embedSrcFrom, fitWithin, HEADER, isPart, PAGE_ID, partTemplate, postTemplate } from './posts-core.mjs';
 
 const fetchText = (p) => fetch(p).then((r) => {
   if (!r.ok) throw new Error(`${p}: ${r.status}`);
@@ -25,14 +25,14 @@ const sf = createSourceFormat(schema);
 const renderer = createRenderer(schema, theme, baseCss);
 const components = new Map(schema.components.map((c) => [c.name, c]));
 
-const NAMES = { Section: '区画', Stack: '並び', Grid: '格子', Heading: '見出し', Text: '文章', Button: 'ボタン', Image: '画像', Html: 'HTML', document: 'ページ' };
+const NAMES = { Section: '区画', Stack: '並び', Grid: '格子', Heading: '見出し', Text: '文章', Button: 'ボタン', Image: '画像', Embed: '地図・埋め込み', Html: 'HTML', document: 'ページ' };
 const ATTRS = {
   padding: '上下の余白', background: '背景', width: '中身の幅', direction: '向き', align: '揃え', justify: '並びの配置',
   gap: '間隔', wrap: '折り返し', columns: '列の数', level: '見出しの段階', size: '文字の大きさ', href: 'リンク先',
   variant: '種類', src: '画像の場所', alt: '代わりの文', ratio: '縦横の比', surface: '囲み',
 };
 // Where one name means something else on a component (a picture's own size, not a layout width).
-const ATTRS_OF = { Image: { width: '元の幅（px）', height: '元の高さ（px）' } };
+const ATTRS_OF = { Image: { width: '元の幅（px）', height: '元の高さ（px）' }, Embed: { src: '埋め込む場所', title: '中身の説明（読み上げ用）' } };
 const VALUES = {
   vertical: '縦', horizontal: '横', start: '先頭側', center: '中央', end: '末尾側', stretch: '伸ばす', between: '両端',
   true: 'する', false: 'しない', none: 'なし', subtle: '薄い色', primary: '主な色', inverse: '反転', secondary: '控えめ',
@@ -56,6 +56,7 @@ const TEMPLATES = {
     { type: 'Text', props: {}, children: [{ type: 'text', value: 'お知らせの文を入れてください。' }] },
   ] },
 };
+TEMPLATES.Embed = { type: 'Embed', props: { src: 'https://www.google.com/maps/embed?pb=', title: '地図' } };
 const PRESET_NAMES = { Card: 'カード', Notice: 'お知らせ枠' };
 const LEGACY_KEY = 'wge-editor-source'; // the single slot the prototype used before the page store
 const PREVIEW_CSS = `
@@ -839,7 +840,7 @@ insertPoint.addEventListener('pointerleave', (e) => {
 });
 
 // The menu lists the everyday blocks first; the boxes for layout come after a rule.
-const MENU = [['Heading', 'Text', 'Image', 'Button'], ['Card', 'Notice'], ['Section', 'Stack', 'Grid']];
+const MENU = [['Heading', 'Text', 'Image', 'Button'], ['Card', 'Notice', 'Embed'], ['Section', 'Stack', 'Grid']];
 let menuTarget = null;
 
 MENU.forEach((names, i) => {
@@ -945,7 +946,9 @@ function attrControl(attr, value, onChange) {
   const input = document.createElement('input');
   input.type = 'text';
   input.value = value ?? '';
-  input.addEventListener('change', () => onChange(input.value === '' && !attr.required ? null : input.value));
+  // An Embed's place may be pasted as the whole <iframe> a map service gives; its src is taken.
+  const read = () => (attr.type === 'embed' ? embedSrcFrom(input.value) : input.value);
+  input.addEventListener('change', () => onChange(read() === '' && !attr.required ? null : read()));
   return input;
 }
 
@@ -1008,6 +1011,12 @@ function renderProps() {
     panel.append(field(ATTRS_OF[node.type]?.[attr.name] ?? ATTRS[attr.name] ?? attr.name, attr.name, control));
   }
   if (node.type === 'Image' && serverMode) panel.append(uploadControl(path));
+  if (node.type === 'Embed') {
+    const note = document.createElement('p');
+    note.className = 'note';
+    note.textContent = 'Google マップの「共有」→「地図を埋め込む」でコピーした HTML を、そのまま「埋め込む場所」に貼れます。埋め込めるのは Google マップと、このサイトのページ（/ で始まる場所）だけです。プレビューでは中身を読み込まず、枠だけを出します。';
+    panel.append(note);
+  }
   if (node.type === 'Image') {
     const note = document.createElement('p');
     note.className = 'note';

@@ -72,6 +72,11 @@ export function createSourceFormat(schema) {
   const components = new Map(schema.components.map((c) => [c.name, c]));
   const spaceTokens = new Set(schema.tokens.space);
   const urlSchemes = new Set(schema.urlSchemes);
+  const embedSources = schema.embedSources ?? [];
+
+  // An Embed's address starts with one of the listed prefixes; "/" means a page of this site,
+  // never "//" (another host). A backslash is refused before this: browsers read it as "/".
+  const embedAllowed = (value) => embedSources.some((s) => (s === '/' ? value.startsWith('/') && !value.startsWith('//') : value.startsWith(s)));
 
   // Returns null when valid, otherwise [code, message].
   function checkValue(attr, value) {
@@ -91,6 +96,9 @@ export function createSourceFormat(schema) {
         if (m && !urlSchemes.has(m[1].toLowerCase())) return ['E_UNSAFE_URL', `${attr.name} に ${m[1]}: は使えません`];
         return null;
       }
+      case 'embed':
+        if (value === '' || /[\x00-\x20\x7f\\]/.test(value)) return ['E_INVALID_VALUE', `${attr.name} に空白・制御文字・\\ は使えません`];
+        return embedAllowed(value) ? null : ['E_UNSAFE_URL', `${attr.name} には、決まった地図のサービスか、このサイトのページだけを埋め込めます`];
       default:
         return null;
     }
