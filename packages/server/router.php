@@ -85,8 +85,8 @@ if (preg_match('#^/site/(.*)$#D', $path, $m) === 1) {
     return true;
 }
 
-// Images saved from the editor (../media/… from the editor and from pages one folder down).
-if (preg_match('#^/(?:site/)?media/([0-9a-f]{16}\.(?:jpg|png|gif|webp))$#D', $path, $m) === 1) {
+// Images and PDFs saved from the editor (../media/… from the editor and from pages one folder down).
+if (preg_match('#^/(?:site/)?media/([0-9a-f]{16}\.(?:jpg|png|gif|webp|pdf))$#D', $path, $m) === 1) {
     StaticFiles::send($site . '/media', $m[1]);
     return true;
 }

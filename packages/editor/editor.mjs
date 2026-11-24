@@ -1084,6 +1084,7 @@ function renderProps() {
     panel.append(field(ATTRS_OF[node.type]?.[attr.name] ?? ATTRS[attr.name] ?? attr.name, attr.name, control));
   }
   if (node.type === 'Image' && serverMode) panel.append(uploadControl(path));
+  if (node.type === 'Button' && serverMode) panel.append(documentControl(path, node));
   if (node.type === 'Table' || node.type === 'Row') {
     const tablePath = node.type === 'Table' ? path : path.slice(0, -1);
     const actions = document.createElement('div');
@@ -1536,6 +1537,49 @@ function uploadControl(path) {
   });
   wrap.append(button('画像を選ぶ…', () => input.click()), input);
   return wrap;
+}
+
+// A PDF for a button to open (rendering.md §7.4): sent as it is, up to the same size as an image.
+// A button still saying the template's "ボタン" is named after the file, so it never reads as
+// a bare "ボタン" on the page; any other wording is the writer's and stays.
+function documentControl(path, node) {
+  const wrap = document.createElement('div');
+  wrap.className = 'field upload';
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'application/pdf,.pdf';
+  input.hidden = true;
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    if (file.size > IMAGE_MAX) {
+      status('PDF が大きすぎます（2.5MB まで）。ページを分けるか、小さくしてから選んでください', 'error');
+      return;
+    }
+    status('PDF を送っています…');
+    const res = await postJson('../api/media', { data: await base64Of(file), kind: 'document' });
+    if (!res.ok) {
+      const why = { 'not-pdf': 'この形式は使えません。PDF を選んでください', 'too-large': 'PDF が大きすぎます（2.5MB まで）' }[res.reason];
+      status(serverMessage(res, why ?? 'PDF を送れませんでした。もう一度選んでください'), 'error');
+      return;
+    }
+    const plain = node.children?.length === 1 && node.children[0].type === 'text' && node.children[0].value === 'ボタン';
+    const label = file.name.replace(/\.pdf$/i, '').trim();
+    apply((doc) => {
+      sf.edit.setProp(doc, path, 'href', res.src);
+      if (plain && label) sf.edit.setInline(doc, path, [{ type: 'text', value: `${label}（PDF）` }]);
+    }, path);
+    status(plain && label ? 'PDF をつなぎました。ボタンの文字は、ファイルの名前から付けています。プレビューで直せます' : 'PDF をつなぎました。ボタンを押すと、この PDF が開きます', 'ok');
+  });
+  wrap.append(button('PDF を選ぶ…', () => input.click()), input);
+  // Below the row, not beside the button, so it reads as one paragraph.
+  const note = document.createElement('p');
+  note.className = 'note';
+  note.textContent = '申請書などの PDF を、このボタンで開けるようにします（2.5MB まで）。送った PDF は、ページを公開する前でも、アドレスを知っていれば誰でも開けます。外に出してよいものだけを選んでください。';
+  const all = document.createDocumentFragment();
+  all.append(wrap, note);
+  return all;
 }
 
 // Shown when an answer did not come from the API (requirements §3.3: a WAF on rental servers).

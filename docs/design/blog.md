@@ -31,7 +31,7 @@
 | `GET /api/pages` | — | 200。`pages`（id・title・date・published・savedAt。日付の新しい順） | — |
 | `POST /api/pages/{id}/load` | `initialSource`、`meta`（任意。`title`・`date`） | 200。`meta` も返す | 422（`invalid-title`・`invalid-date`） |
 | `POST /api/pages/{id}/meta` | `title`、`date`、`description`（任意。無ければ今のまま） | 200 | 404（読み込まれていない）、422（`invalid-title`・`invalid-date`・`invalid-description`） |
-| `POST /api/media` | `data`（base64） | 200。`src`、読めれば `width`・`height` | 413 `too-large`、415 `not-image`、400 |
+| `POST /api/media` | `data`（base64）、`kind`（`image` か `document`。無ければ `image`） | 200。`src`、画像で読めれば `width`・`height` | 413 `too-large`、415 `not-image`（画像）・`not-pdf`（`document`）、400 |
 | `GET /api/ping` | — | ブログなら `blog: true`・`blogTitle` も返す | — |
 | `POST /api/pages/{id}/delete` | `{}` | 200。`deletedAt`（ミリ秒） | 409 `published`（公開中）・`top`、404 `not-loaded`・`deleted` |
 | `POST /api/pages/{id}/restore` | `{}` | 200。`draft`・`published`（`load` と同じ形） | 409 `not-deleted`、404 `not-loaded` |
