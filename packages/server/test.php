@@ -486,7 +486,7 @@ check($body['pages'] === [], 'refused paths create no page');
 
 // Pages at depth 0, 1 and 2, with no date.
 [$status, $body] = $spost('/api/pages/top/load', ['initialSource' => $links, 'meta' => ['title' => '合成の祭 トップ', 'path' => 'index.html']]);
-check($status === 200 && $body['meta'] === ['title' => '合成の祭 トップ', 'date' => '', 'description' => '', 'path' => 'index.html'], "a site's page needs no date, and keeps its path");
+check($status === 200 && $body['meta'] === ['title' => '合成の祭 トップ', 'date' => '', 'description' => '', 'path' => 'index.html', 'livePath' => null], "a site's page needs no date, and keeps its path");
 [$status] = $spost('/api/pages/en-top/load', ['initialSource' => $links, 'meta' => ['title' => 'Fest', 'path' => 'en/index.html']]);
 [$status2] = $spost('/api/pages/deep/load', ['initialSource' => $links, 'meta' => ['title' => '深い', 'path' => 'a/b/deep.html', 'date' => '2026-11-24']]);
 check($status === 200 && $status2 === 200, 'pages one and two folders down are made');
@@ -537,6 +537,7 @@ check($status === 409 && $body['reason'] === 'path-occupied', 'a file where a fo
 // A new path takes effect on the next publish only.
 [$status, $body] = $spost('/api/pages/en-top/meta', ['title' => 'Fest!', 'path' => 'en/top.html']);
 check($status === 200 && str_contains($sread('en/index.html'), '<title>Fest!</title>') && !is_file($siteDir . '/en/top.html'), 'changing the path rewrites the published page where it is');
+check($body['meta']['path'] === 'en/top.html' && $body['meta']['livePath'] === 'en/index.html', 'the answer tells the next path from the one written now');
 [, $body] = $siteApi->handle('GET', '/api/pages', '', []);
 $enRow = array_values(array_filter($body['pages'], static fn (array $p) => $p['id'] === 'en-top'))[0];
 check($enRow['path'] === 'en/top.html' && $enRow['livePath'] === 'en/index.html', 'the list tells the next path from the one written now');

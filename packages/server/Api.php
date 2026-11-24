@@ -298,7 +298,8 @@ final class Api
             return null;
         }
         $meta = ['title' => (string) $row['title'], 'date' => (string) $row['date'], 'description' => (string) $row['description']];
-        return $this->site !== null ? $meta + ['path' => $this->pathOf($pageId)] : $meta;
+        // A site's page: where it goes when next published, and where it is now (null: nowhere).
+        return $this->site !== null ? $meta + ['path' => $this->pathOf($pageId), 'livePath' => $this->livePath($pageId)] : $meta;
     }
 
     // A null description (or path) keeps the one stored (or none, for a new row).

@@ -47,6 +47,51 @@ export function fitWithin(width, height, max) {
   return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
 }
 
+// ------------------------------------------------ a site of pages (docs/design/site.md)
+
+/** A site's page path as the server takes it: lower-case names joined by "/", ending in .html. */
+export const SITE_PATH = /^(?:[a-z0-9][a-z0-9-]{0,63}\/){0,3}[a-z0-9][a-z0-9-]{0,63}\.html$/;
+const RESERVED_FOLDERS = ['media', 'blog'];
+export const HEADER = 'part-header';
+export const FOOTER = 'part-footer';
+export const isPart = (id) => id === HEADER || id === FOOTER;
+
+/**
+ * A path typed by a person, made the way the server keeps it, or null: "/Exhibitors" →
+ * "exhibitors.html", "en/" → "en/index.html".
+ */
+export function cleanPath(value) {
+  let path = String(value ?? '').trim().toLowerCase().replace(/^\/+/, '');
+  if (path === '' || path.endsWith('/')) path += 'index.html';
+  if (!path.endsWith('.html')) path += '.html';
+  return SITE_PATH.test(path) && !RESERVED_FOLDERS.includes(path.split('/')[0]) ? path : null;
+}
+
+/** The page's address under the site: a last index.html is left off (en/index.html → en/). */
+export function addressOf(path) {
+  return String(path).replace(/(^|\/)index\.html$/, '$1');
+}
+
+/** A new page's id from its path, not one of `taken`: index.html → top, en/index.html → en-index. */
+export function pageIdFor(path, taken = new Set()) {
+  let base = path.replace(/\.html$/, '').replaceAll('/', '-').slice(0, 56).replace(/-+$/, '');
+  if (base === 'index') base = 'top';
+  // part-… are the site's header and footer.
+  if (base.startsWith('part-')) base = `page-${base}`.slice(0, 56);
+  let id = base;
+  for (let n = 2; taken.has(id); n++) id = `${base}-${n}`;
+  return id;
+}
+
+/** The first source of the site's header or footer: the site's name, linking to the top page. */
+export function partTemplate(id, siteName) {
+  const name = sourceText(siteName);
+  if (id === HEADER) {
+    return ['<Section padding="sm">', '  <Stack direction="horizontal" justify="between" align="center">', `    <Text size="lg"><Link href="/">${name}</Link></Text>`, '  </Stack>', '</Section>', ''].join('\n');
+  }
+  return ['<Section padding="sm">', `  <Text size="sm">${name}</Text>`, '</Section>', ''].join('\n');
+}
+
 /** "2026-11-23" → "2026年11月23日" */
 export function dateLabel(date) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date ?? '');
