@@ -1237,7 +1237,18 @@ function showMeta(meta) {
   $('page-meta').hidden = false;
   $('page-title').value = meta.title;
   $('page-date').value = meta.date;
+  $('page-description').value = meta.description ?? '';
+  showDescriptionCount();
   document.title = `${meta.title} – エディタ`;
+}
+
+// The description is one line on the server: line breaks typed here become spaces.
+const descriptionValue = () => $('page-description').value.replace(/\s+/g, ' ').trim();
+
+function showDescriptionCount() {
+  const n = [...descriptionValue()].length;
+  $('page-description-count').textContent = n === 0 ? 'まだ書いていません（書かないと、検索結果には本文の一部が出ます）' : `${n} / 300 文字`;
+  $('page-description-open').classList.toggle('filled', n > 0);
 }
 
 async function saveMeta() {
@@ -1247,16 +1258,18 @@ async function saveMeta() {
     status('題名は 1 行で 120 文字まで、日付は必ず入れてください', 'error');
     return;
   }
-  const res = await postJson(`../api/pages/${pageId}/meta`, { title, date });
+  const res = await postJson(`../api/pages/${pageId}/meta`, { title, date, description: descriptionValue() });
   if (!res.ok) {
-    status(serverMessage(res, '題名と日付を保存できませんでした'), 'error');
+    status(res.reason === 'invalid-description' ? '説明文は 300 文字までにしてください' : serverMessage(res, '題名と日付を保存できませんでした'), 'error');
     return;
   }
   document.title = `${title} – エディタ`;
-  status(saving.publishedSource !== null ? '題名と日付を保存しました。公開中のページにも出ています' : '題名と日付を保存しました', 'ok');
+  status(saving.publishedSource !== null ? '題名・日付・説明文を保存しました。公開中のページにも出ています' : '題名・日付・説明文を保存しました', 'ok');
 }
 $('page-title').addEventListener('change', saveMeta);
 $('page-date').addEventListener('change', saveMeta);
+$('page-description').addEventListener('input', showDescriptionCount);
+$('page-description').addEventListener('change', saveMeta);
 
 // A picture for an Image block (with the server only). A photo is made smaller first (1600 px,
 // JPEG), so a phone's picture fits; a small PNG (a logo) and a GIF go as they are (blog.md).

@@ -114,6 +114,31 @@
     "page": {"title": "空"},
     "pageHtml": "<!doctype html>\n<html lang=\"ja\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>空</title>\n<link rel=\"stylesheet\" href=\"style.css\">\n</head>\n<body>\n<main class=\"wge-page\">\n</main>\n</body>\n</html>\n"
   },
+  {
+    "name": "page head: description, address, picture and site name",
+    "source": "",
+    "page": {"title": "記事 & \"題\"", "stylesheetHref": "../style.css", "head": {"description": "説明 <b>&\"", "url": "https://site.example/blog/20261124-a1b2/", "image": "https://site.example/blog/media/0123456789abcdef.png", "type": "article", "siteName": "合成のお知らせ"}},
+    "pageHtml": "<!doctype html>\n<html lang=\"ja\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>記事 &amp; \"題\"</title>\n<meta name=\"description\" content=\"説明 &lt;b&gt;&amp;&quot;\">\n<link rel=\"canonical\" href=\"https://site.example/blog/20261124-a1b2/\">\n<meta property=\"og:type\" content=\"article\">\n<meta property=\"og:title\" content=\"記事 &amp; &quot;題&quot;\">\n<meta property=\"og:url\" content=\"https://site.example/blog/20261124-a1b2/\">\n<meta property=\"og:site_name\" content=\"合成のお知らせ\">\n<meta property=\"og:description\" content=\"説明 &lt;b&gt;&amp;&quot;\">\n<meta property=\"og:image\" content=\"https://site.example/blog/media/0123456789abcdef.png\">\n<meta name=\"twitter:card\" content=\"summary_large_image\">\n<link rel=\"stylesheet\" href=\"../style.css\">\n</head>\n<body>\n<main class=\"wge-page\">\n</main>\n</body>\n</html>\n"
+  },
+  {
+    "name": "page head: an address without a picture or description",
+    "source": "",
+    "page": {"title": "t", "head": {"url": "http://site.example/", "description": "", "siteName": ""}},
+    "pageHtml": "<!doctype html>\n<html lang=\"ja\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>t</title>\n<link rel=\"canonical\" href=\"http://site.example/\">\n<meta property=\"og:type\" content=\"website\">\n<meta property=\"og:title\" content=\"t\">\n<meta property=\"og:url\" content=\"http://site.example/\">\n<meta name=\"twitter:card\" content=\"summary\">\n<link rel=\"stylesheet\" href=\"style.css\">\n</head>\n<body>\n<main class=\"wge-page\">\n</main>\n</body>\n</html>\n"
+  },
+  {
+    "name": "page head: a description alone has no sharing tags",
+    "source": "",
+    "page": {"title": "t", "head": {"description": "説明", "image": null}},
+    "pageHtml": "<!doctype html>\n<html lang=\"ja\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>t</title>\n<meta name=\"description\" content=\"説明\">\n<link rel=\"stylesheet\" href=\"style.css\">\n</head>\n<body>\n<main class=\"wge-page\">\n</main>\n</body>\n</html>\n"
+  },
+  {"name": "page head: a relative address", "source": "", "page": {"title": "t", "head": {"url": "../a/"}}, "renderError": {"code": "E_HEAD", "key": "head.url"}},
+  {"name": "page head: a script address for the picture", "source": "", "page": {"title": "t", "head": {"url": "https://a.example/", "image": "javascript:alert(1)"}}, "renderError": {"code": "E_HEAD", "key": "head.image"}},
+  {"name": "page head: an address with a quote", "source": "", "page": {"title": "t", "head": {"url": "https://a.example/\"x"}}, "renderError": {"code": "E_HEAD", "key": "head.url"}},
+  {"name": "page head: an address ending in a line break", "source": "", "page": {"title": "t", "head": {"url": "https://a.example/\n"}}, "renderError": {"code": "E_HEAD", "key": "head.url"}},
+  {"name": "page head: an unknown type", "source": "", "page": {"title": "t", "head": {"type": "video"}}, "renderError": {"code": "E_HEAD", "key": "head.type"}},
+  {"name": "page head: a description that is not text", "source": "", "page": {"title": "t", "head": {"description": 3}}, "renderError": {"code": "E_HEAD", "key": "head.description"}},
+  {"name": "page head: an unknown item", "source": "", "page": {"title": "t", "head": {"keywords": "a"}}, "renderError": {"code": "E_HEAD", "key": "head.keywords"}},
   {"name": "invalid page language", "source": "", "page": {"title": "x", "lang": "ja\"><script>"}, "renderError": {"code": "E_LANG", "key": "lang"}},
   {"name": "default stylesheet", "stylesheet": "default.css"},
   {"name": "every class the schema can produce has a rule", "classCoverage": true},

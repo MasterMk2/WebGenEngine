@@ -54,8 +54,14 @@ final class PageStore
         $db->exec('CREATE TABLE IF NOT EXISTS page_meta (
             id TEXT PRIMARY KEY REFERENCES pages(id),
             title TEXT NOT NULL,
-            date TEXT NOT NULL
+            date TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT \'\'
         )');
+        // Databases made before the description (2026-11-24) get the column.
+        $columns = array_column($db->query('PRAGMA table_info(page_meta)')->fetchAll(PDO::FETCH_ASSOC), 'name');
+        if (!in_array('description', $columns, true)) {
+            $db->exec("ALTER TABLE page_meta ADD COLUMN description TEXT NOT NULL DEFAULT ''");
+        }
         // Pages moved to the trash (blog.md §5): hidden from the list and the site, kept until restored.
         $db->exec('CREATE TABLE IF NOT EXISTS page_trash (
             id TEXT PRIMARY KEY REFERENCES pages(id),

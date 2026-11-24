@@ -64,7 +64,19 @@
 
 ## 5. ページ全体
 
-PHP の `renderPage($doc, $title, $lang = 'ja', $stylesheetHref = 'style.css', $trustRaw = false)`、JS の `renderPage(doc, { title, lang = 'ja', stylesheetHref = 'style.css', trustRaw = false })` は、`<!doctype html>` から `</html>` までを返す。本文は `<main class="wge-page">` に入れる。`lang` が言語コードの形でなければ `RenderError`（`E_LANG`）。
+PHP の `renderPage($doc, $title, $lang = 'ja', $stylesheetHref = 'style.css', $trustRaw = false, $head = [])`、JS の `renderPage(doc, { title, lang = 'ja', stylesheetHref = 'style.css', trustRaw = false, head = {} })` は、`<!doctype html>` から `</html>` までを返す。本文は `<main class="wge-page">` に入れる。`lang` が言語コードの形でなければ `RenderError`（`E_LANG`）。
+
+`head`（2026-11-24）は、検索と共有のための項目で、`<title>` のすぐ後ろに決まった順で書く。`head` を渡さなければ、出力は前と 1 バイトも変わらない。
+
+| 項目 | 値 | 書くもの |
+|---|---|---|
+| `description` | 文字列（空なら書かない） | `<meta name="description">`。`url` があれば `og:description` も |
+| `url` | `http(s)://` の絶対 URL | `<link rel="canonical">`、`og:type`・`og:title`（ページの題名）・`og:url`、`twitter:card`。**`url` が無ければ共有用の印は 1 つも書かない**（OGP は絶対 URL が要るため） |
+| `image` | `http(s)://` の絶対 URL | `og:image`。`twitter:card` を `summary_large_image` にする（無ければ `summary`） |
+| `type` | `website`（既定）か `article` | `og:type` |
+| `siteName` | 文字列（空なら書かない） | `og:site_name` |
+
+値の誤りと知らない項目は `RenderError`（`E_HEAD`、key は `head.<項目>`）。調べる順は表の順、そのあと知らない項目。`null` は渡さなかったのと同じ。
 
 `renderFragment` も同じ `trustRaw` を受け取る（PHP は `renderFragment($doc, $indent = '', $trustRaw = false)`、JS は `renderFragment(doc, indent, { trustRaw })`）。`trustRaw` が真のときだけ Html の中身をそのまま出し、それ以外は無害化する（§7）。
 
@@ -107,6 +119,6 @@ JS の `renderFragment(doc, indent, { annotate: true })` は、エディタの�
 ## 8. まだ決めていないこと
 
 - 画像の幅と高さ（`width` `height` 属性）。レイアウトのずれ（CLS）を防ぐには要るが、アップロード時に寸法を記録する仕組みが先に要る
-- SEO 用の `<meta>`（説明文、OGP）と構造化データ
+- 構造化データ（JSON-LD）。説明文と OGP は 2026-11-24 に §5 の `head` で入れた
 - 見出しの大きさのトークン（いまはブラウザの既定のまま）
 - テーマを GUI で変える画面

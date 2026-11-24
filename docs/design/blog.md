@@ -25,7 +25,7 @@
 |---|---|---|---|
 | `GET /api/pages` | — | 200。`pages`（id・title・date・published・savedAt。日付の新しい順） | — |
 | `POST /api/pages/{id}/load` | `initialSource`、`meta`（任意。`title`・`date`） | 200。`meta` も返す | 422（`invalid-title`・`invalid-date`） |
-| `POST /api/pages/{id}/meta` | `title`、`date` | 200 | 404（読み込まれていない）、422 |
+| `POST /api/pages/{id}/meta` | `title`、`date`、`description`（任意。無ければ今のまま） | 200 | 404（読み込まれていない）、422（`invalid-title`・`invalid-date`・`invalid-description`） |
 | `POST /api/media` | `data`（base64） | 200。`src` | 413 `too-large`、415 `not-image`、400 |
 | `GET /api/ping` | — | ブログなら `blog: true`・`blogTitle` も返す | — |
 | `POST /api/pages/{id}/delete` | `{}` | 200。`wasPublished` | 404（`not-loaded`・`deleted`）、422 `protected`（ブログでない `top`） |
@@ -48,3 +48,17 @@
 - 画面（`posts.html`）：各記事の「削除」。公開中の記事だけ、サイトから消えることを確認してから消す。消したあとの「元に戻す」と、一覧の下のゴミ箱（件数つき、「戻す」）
 - 前段のアプリ（server.md §6）は、`delete` と `restore` を中継する道を別に許す必要がある。サイトから消えるので、公開と同じ権限に揃えるのがよい
 - テスト（`test.php` part 5）：要求ヘッダーの検査、公開中の記事の削除でページとフォルダが消えること、目次とフィードの書き直し、一覧とゴミ箱、ゴミ箱の記事が 6 種の要求を断ること、戻すと下書きで一覧に戻り公開されないこと、戻した記事の公開、読み込まれていない記事、ブログでない `top`
+
+## 6. 説明文と共有の印（2026-11-24）
+
+- **説明文は `page_meta.description` に持つ。** 1 行で 300 文字まで（前後の空白は取る）。空なら書かない。前の版のデータベースには、開いたときに列を足す
+- エディタでは、題名と日付の横の「説明文」から書く。改行は空白にする。書いた後は ✓ が付く
+- 公開するページの `<head>` には、rendering.md §5 の `head` を渡す
+  - `description`：その記事の説明文
+  - `url`：`WGE_SITE_URL` があるときだけ。記事は `<サイト>/<id>/`、目次は `<サイト>/`。無ければ説明文の `<meta>` だけを書く（開発用の `router.php` はこちら）
+  - `type`：ブログの記事は `article`、目次とブログでないサイトは `website`
+  - `siteName`：ブログの名前
+  - `image`：ページの中の最初の画像の部品の `src` を、記事の URL を基準に絶対 URL にしたもの（`../media/x.png` → `<サイト>/media/x.png`）。`javascript:` などの方式、`//` で始まるもの、空白や `"` を含むものは使わない
+- フィードの各記事に、説明文があれば `<description>` を付ける
+- 記事の一覧の API（`GET /api/pages`）も `description` を返す
+- テスト（`test.php` part 5）：説明文の検査（改行・301 文字・文字列でない値）、前後の空白、題名だけの変更で説明文が残ること、記事と目次の `<head>`、最初の画像の絶対 URL、フィード、一覧、URL の解決 8 通り、前の版のデータベースへの列の追加。書き出し器の共通テストデータに `head` の 10 件（JS・PHP）

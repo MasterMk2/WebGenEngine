@@ -26,6 +26,8 @@ final class Renderer
     private const COLOR = '/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/D';
     private const FONT = '/^[A-Za-z0-9 ,"-]{1,200}$/D';
     private const LANG = '/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/D';
+    private const ABSOLUTE_URL = '#^https?://[^\s"<>]+$#D';
+    private const HEAD_KEYS = ['description', 'url', 'image', 'type', 'siteName'];
 
     /** @var array<string, array> */
     private array $components = [];
@@ -214,7 +216,12 @@ final class Renderer
         return $out;
     }
 
-    public function renderPage(Document $doc, string $title, string $lang = 'ja', string $stylesheetHref = 'style.css', bool $trustRaw = false): string
+    /**
+     * @param array<string, mixed> $head the description and the page's address for search and
+     *   sharing (rendering.md §5): description, url and image (absolute), type ("website" or
+     *   "article"), siteName
+     */
+    public function renderPage(Document $doc, string $title, string $lang = 'ja', string $stylesheetHref = 'style.css', bool $trustRaw = false, array $head = []): string
     {
         if (preg_match(self::LANG, $lang) !== 1) {
             throw new RenderError('E_LANG', 'lang', '使えない言語コードです');
@@ -226,6 +233,7 @@ final class Renderer
             '<meta charset="utf-8">',
             '<meta name="viewport" content="width=device-width, initial-scale=1">',
             '<title>' . self::escapeText($title) . '</title>',
+            ...$this->headLines($title, $head),
             '<link rel="stylesheet" href="' . self::escapeAttr($stylesheetHref) . '">',
             '</head>',
             '<body>',
@@ -235,6 +243,53 @@ final class Renderer
             '</html>',
             '',
         ]);
+    }
+
+    /** @return list<string> */
+    private function headLines(string $title, array $head): array
+    {
+        $has = static fn (string $k): bool => array_key_exists($k, $head) && $head[$k] !== null;
+        foreach (array_merge(self::HEAD_KEYS, array_keys($head)) as $k) {
+            if (!in_array($k, self::HEAD_KEYS, true)) {
+                throw new RenderError('E_HEAD', "head.{$k}", '知らない項目です');
+            }
+            if (!$has($k)) {
+                continue;
+            }
+            $v = $head[$k];
+            $ok = match ($k) {
+                'url', 'image' => is_string($v) && preg_match(self::ABSOLUTE_URL, $v) === 1,
+                'type' => $v === 'website' || $v === 'article',
+                default => is_string($v),
+            };
+            if (!$ok) {
+                throw new RenderError('E_HEAD', "head.{$k}", '使えない値です');
+            }
+        }
+        $meta = static fn (string $attr, string $name, string $content): string => '<meta ' . $attr . '="' . $name . '" content="' . self::escapeAttr($content) . '">';
+        $description = $has('description') ? $head['description'] : '';
+        $lines = [];
+        if ($description !== '') {
+            $lines[] = $meta('name', 'description', $description);
+        }
+        if (!$has('url')) {
+            return $lines;
+        }
+        $lines[] = '<link rel="canonical" href="' . self::escapeAttr($head['url']) . '">';
+        $lines[] = $meta('property', 'og:type', $has('type') ? $head['type'] : 'website');
+        $lines[] = $meta('property', 'og:title', $title);
+        $lines[] = $meta('property', 'og:url', $head['url']);
+        if ($has('siteName') && $head['siteName'] !== '') {
+            $lines[] = $meta('property', 'og:site_name', $head['siteName']);
+        }
+        if ($description !== '') {
+            $lines[] = $meta('property', 'og:description', $description);
+        }
+        if ($has('image')) {
+            $lines[] = $meta('property', 'og:image', $head['image']);
+        }
+        $lines[] = $meta('name', 'twitter:card', $has('image') ? 'summary_large_image' : 'summary');
+        return $lines;
     }
 
     public function stylesheet(): string
