@@ -30,6 +30,8 @@ const ATTRS = {
   gap: '間隔', wrap: '折り返し', columns: '列の数', level: '見出しの段階', size: '文字の大きさ', href: 'リンク先',
   variant: '種類', src: '画像の場所', alt: '代わりの文', ratio: '縦横の比',
 };
+// Where one name means something else on a component (a picture's own size, not a layout width).
+const ATTRS_OF = { Image: { width: '元の幅（px）', height: '元の高さ（px）' } };
 const VALUES = {
   vertical: '縦', horizontal: '横', start: '先頭側', center: '中央', end: '末尾側', stretch: '伸ばす', between: '両端',
   true: 'する', false: 'しない', none: 'なし', subtle: '薄い色', primary: '主な色', inverse: '反転', secondary: '控えめ',
@@ -902,7 +904,15 @@ function attrControl(attr, value, onChange) {
   let options = null;
   if (attr.type === 'enum') options = attr.values;
   else if (attr.type === 'space') options = schema.tokens.space;
-  else if (attr.type === 'int') options = Array.from({ length: attr.max - attr.min + 1 }, (_, i) => String(attr.min + i));
+  // A short range is a list to pick from; a long one (a picture's size) is typed.
+  else if (attr.type === 'int' && attr.max - attr.min < 24) options = Array.from({ length: attr.max - attr.min + 1 }, (_, i) => String(attr.min + i));
+  if (attr.type === 'int' && !options) {
+    const input = document.createElement('input');
+    Object.assign(input, { type: 'number', min: String(attr.min), max: String(attr.max), step: '1', value: value ?? '' });
+    input.inputMode = 'numeric';
+    input.addEventListener('change', () => onChange(input.value === '' && !attr.required ? null : input.value));
+    return input;
+  }
   if (options) {
     const select = document.createElement('select');
     if (!attr.required) select.add(new Option('（指定なし）', ''));
@@ -977,9 +987,15 @@ function renderProps() {
 
   for (const attr of comp.attributes) {
     const control = attrControl(attr, node.props[attr.name], (value) => apply((doc) => sf.edit.setProp(doc, path, attr.name, value), path));
-    panel.append(field(ATTRS[attr.name] ?? attr.name, attr.name, control));
+    panel.append(field(ATTRS_OF[node.type]?.[attr.name] ?? ATTRS[attr.name] ?? attr.name, attr.name, control));
   }
   if (node.type === 'Image' && serverMode) panel.append(uploadControl(path));
+  if (node.type === 'Image') {
+    const note = document.createElement('p');
+    note.className = 'note';
+    note.textContent = '元の幅と高さは、画像を選ぶと自動で入ります。読み込みの前から画像の場所を空けておくためのものです。画像そのものと違う値にすると、表示の大きさも変わります。';
+    panel.append(note);
+  }
 
   if (comp.kind === 'text') {
     const note = document.createElement('p');
@@ -1594,7 +1610,10 @@ if (ping?.wge === 1) {
       // In the trash (blog.md §5): never fall back to this browser's copy of it.
       status('この記事はゴミ箱にあります。記事の一覧のゴミ箱から戻すと、また直せます', 'error');
       $('posts-link').hidden = false;
-      throw e;
+      $('page-name').hidden = true;
+      // Nothing is loaded, so nothing here may act: only the way back to the list stays.
+      for (const b of document.querySelectorAll('button')) b.disabled = true;
+      await new Promise(() => {});
     }
     status(`サーバーの保存先を開けなかったため、このブラウザの中に保存します（${e.reason ?? e.message}）`, 'error');
   }

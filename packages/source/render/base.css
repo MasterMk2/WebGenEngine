@@ -5,11 +5,11 @@ a { color: var(--wge-color-primary); }
 a:focus-visible { outline: 2px solid var(--wge-color-primary); outline-offset: 2px; }
 
 .wge-section { padding-block: var(--wge-space-lg); padding-inline: var(--wge-space-md); }
-.wge-section > * { max-width: var(--wge-width-normal); margin-inline: auto; }
-.wge-width-narrow > * { max-width: var(--wge-width-narrow); }
-.wge-width-normal > * { max-width: var(--wge-width-normal); }
-.wge-width-wide > * { max-width: var(--wge-width-wide); }
-.wge-width-full > * { max-width: none; }
+.wge-section > * { max-width: min(100%, var(--wge-width-normal)); margin-inline: auto; }
+.wge-width-narrow > * { max-width: min(100%, var(--wge-width-narrow)); }
+.wge-width-normal > * { max-width: min(100%, var(--wge-width-normal)); }
+.wge-width-wide > * { max-width: min(100%, var(--wge-width-wide)); }
+.wge-width-full > * { max-width: 100%; }
 .wge-bg-none { background: none; }
 .wge-bg-subtle { background: var(--wge-color-subtle); }
 .wge-bg-primary { background: var(--wge-color-primary); color: var(--wge-color-on-primary); }
@@ -55,7 +55,9 @@ a:focus-visible { outline: 2px solid var(--wge-color-primary); outline-offset: 2
 .wge-bg-primary .wge-variant-secondary { color: var(--wge-color-on-primary); border-color: var(--wge-color-on-primary); }
 .wge-bg-inverse .wge-variant-secondary { color: var(--wge-color-on-inverse); border-color: var(--wge-color-on-inverse); }
 
-.wge-image { display: block; max-width: 100%; height: auto; }
+/* :where() has no weight, so a section's width above still limits a picture placed in it. */
+.wge-image { display: block; height: auto; }
+:where(.wge-image) { max-width: 100%; }
 .wge-ratio-auto { width: auto; }
 .wge-ratio-1-1 { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; }
 .wge-ratio-4-3 { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
