@@ -2,7 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createSourceFormat } from '../source/js/source-format.mjs';
-import { addressOf, cleanPath, cleanTitle, dateLabel, embedSrcFrom, fitWithin, FOOTER, HEADER, isPart, newPostId, PAGE_ID, pageIdFor, partTemplate, postTemplate, today } from './posts-core.mjs';
+import { addressOf, cleanPath, cleanTitle, dateLabel, embedSrcFrom, fitWithin, FOOTER, HEADER, isPart, newPostId, PAGE_ID, pageHref, pageIdFor, partTemplate, postTemplate, today } from './posts-core.mjs';
+
+test("a link to a page of the site is written from the site's root, without a last index.html", () => {
+  assert.equal(pageHref('index.html'), '/');
+  assert.equal(pageHref('en/index.html'), '/en/');
+  assert.equal(pageHref('about.html'), '/about.html');
+  assert.equal(pageHref('info/guide.html'), '/info/guide.html');
+});
 
 test("an embed's place is taken out of a pasted <iframe>, or kept as typed", () => {
   const pasted = '<iframe src="https://www.google.com/maps/embed?pb=!1m18&amp;z=2" width="600" height="450" style="border:0;" allowfullscreen="" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>';

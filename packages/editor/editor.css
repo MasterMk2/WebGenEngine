@@ -120,6 +120,16 @@ button.danger { color: var(--danger); }
 .blockbar .crumbs { display: flex; align-items: center; min-width: 0; overflow: hidden; }
 .blockbar .crumbs span { color: var(--muted); padding-inline: 1px; }
 .blockbar .crumbs button[aria-current] { font-weight: 600; }
+/* On a narrow preview the outer steps give way first, so the chosen block's name stays whole. */
+.blockbar .crumbs button { min-width: 1.5em; overflow: hidden; text-overflow: ellipsis; }
+.blockbar .crumbs button[aria-current] { flex-shrink: 0; }
+.preview-frame { container-type: inline-size; }
+/* The phone's width: tighter buttons, so the toolbar keeps the chosen block's name. */
+@container (max-width: 30rem) {
+  .blockbar button { padding-inline: 4px; min-width: 24px; }
+  .blockbar .handle { padding-inline: 3px; }
+  .blockbar .sep { margin-inline: 1px; }
+}
 .insert-point {
   position: absolute;
   z-index: 2;
@@ -148,6 +158,24 @@ button.danger { color: var(--danger); }
 .insert-menu button { text-align: left; border-color: transparent; }
 .insert-menu button:hover, .insert-menu button:focus-visible { background: var(--accent-soft); }
 .insert-menu hr { width: 100%; margin: 2px 0; border: 0; border-top: 1px solid var(--line); }
+.link-box {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  gap: 6px;
+  width: min(26rem, calc(100% - 8px));
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.16);
+}
+.link-box[hidden] { display: none; }
+.link-box label { font-weight: 600; }
+.link-box input[type="text"] { width: 100%; }
+.link-box .note { margin: 0; }
+.link-box .problem { margin: 0; color: var(--danger); font-size: 13px; }
+.link-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .ghost {
   position: absolute;
   pointer-events: none;
