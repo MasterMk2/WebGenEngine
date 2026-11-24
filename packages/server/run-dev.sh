@@ -2,15 +2,18 @@
 # Starts the editor with the PHP save API at http://127.0.0.1:8766/editor/ in Docker (WSL).
 # The port is published on 127.0.0.1 only: the API has no accounts yet (router.php).
 # Usage: sh server/run-dev.sh [image] [port] [blog title] [site name]
-#   (default: php:8.3-apache 8766, no blog, no site)
+#   (default: php:8.3-apache 8766, no blog, no site; "-" as the blog title is no blog, since an
+#   empty argument can be lost on its way through wsl)
 # Data (SQLite and the published site) goes to server/data/, which Git ignores. With a blog
 # title the site is a blog (blog.md) and its data goes to server/data/blog/ instead; with a
-# site name (and no blog title) it is a site of pages (site.md), in server/data/pages/.
+# site name (and no blog title) it is a site of pages (site.md), in server/data/pages/:
+#   sh server/run-dev.sh php:8.3-apache 8768 - 合成の祭
 set -eu
 cd "$(dirname "$0")/.."
 image=${1:-php:8.3-apache}
 port=${2:-8766}
 blog=${3:-}
+[ "$blog" != "-" ] || blog=
 site=${4:-}
 data=server/data
 [ -z "$site" ] || data=server/data/pages

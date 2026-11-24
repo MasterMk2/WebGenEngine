@@ -157,7 +157,13 @@ final class Api
                 if ($meta !== null && $this->metaOf($pageId) === null) {
                     $this->setMeta($pageId, $meta['title'], $meta['date'] ?? '', $meta['description'] ?? '', $this->site !== null ? ($meta['path'] ?? null) : null);
                 }
-                return self::reply(200, ['ok' => true] + $state + ['meta' => $this->metaOf($pageId)]);
+                // A site's page opened without its title yet (the top page, opened directly) gets the
+                // fields filled as it is written now, so its title and path can be set in the editor.
+                $kept = $this->metaOf($pageId);
+                if ($kept === null && $this->site !== null && !$isPart) {
+                    $kept = ['title' => self::TITLES[$pageId] ?? $pageId, 'date' => '', 'description' => '', 'path' => $this->pathOf($pageId), 'livePath' => $this->livePath($pageId)];
+                }
+                return self::reply(200, ['ok' => true] + $state + ['meta' => $kept]);
             case 'draft':
                 $source = $input['source'] ?? null;
                 $base = $input['baseRevision'] ?? null;
