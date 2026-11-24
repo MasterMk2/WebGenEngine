@@ -52,7 +52,7 @@ sh php/run-docker.sh php:8.3-apache php:8.5-cli-alpine
 |---|---|---|
 | `container` | Section、Stack、Grid | ブロックの部品とコメント。空白以外の文字は書けない（`E_TEXT_IN_BLOCK`） |
 | `text` | Heading、Text、Button | 文（文字とインラインの部品） |
-| `void` | Image | なし。必ず `/>` で閉じる（`E_VOID_NOT_SELF_CLOSED`） |
+| `void` | Image、Embed | なし。必ず `/>` で閉じる（`E_VOID_NOT_SELF_CLOSED`） |
 | `raw` | Html | `</Html>` までの文字をそのまま持つ。中身は解釈しない（R4 の「GUI では中身を編集しない箱」）。スキーマで `trusted` を付けてあり、将来は管理者だけが書けるようにする（§3.4） |
 | `inline` | Link、Strong、Em、Small | 文 |
 | `inline-void` | Br | なし |
@@ -69,6 +69,7 @@ sh php/run-docker.sh php:8.3-apache php:8.5-cli-alpine
 | `enum` | `values` のどれか |
 | `int` | 先頭に 0 を付けない 10 進数で、`min` 以上 `max` 以下。ツリーには文字列のまま持つ |
 | `url` | 空でない。空白と制御文字を含まない。スキーム（`xxx:`）があるなら `urlSchemes` のどれか。`javascript:` などは `E_UNSAFE_URL` |
+| `embed` | 空でない。空白・制御文字・`\` を含まない（`E_INVALID_VALUE`。ブラウザは `\` を `/` と読むため）。スキーマの `embedSources` のどれかで始まる。`/` はこのサイトのページの意味で、`//` は断る。外れたら `E_UNSAFE_URL`（2026-11-25） |
 | `string` | 何でもよい |
 
 - 型に合わない値は `E_INVALID_VALUE`。必須の属性がないと `E_MISSING_ATTRIBUTE`

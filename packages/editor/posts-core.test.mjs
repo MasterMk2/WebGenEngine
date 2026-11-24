@@ -2,7 +2,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createSourceFormat } from '../source/js/source-format.mjs';
-import { addressOf, cleanPath, cleanTitle, dateLabel, fitWithin, FOOTER, HEADER, isPart, newPostId, PAGE_ID, pageIdFor, partTemplate, postTemplate, today } from './posts-core.mjs';
+import { addressOf, cleanPath, cleanTitle, dateLabel, embedSrcFrom, fitWithin, FOOTER, HEADER, isPart, newPostId, PAGE_ID, pageIdFor, partTemplate, postTemplate, today } from './posts-core.mjs';
+
+test("an embed's place is taken out of a pasted <iframe>, or kept as typed", () => {
+  const pasted = '<iframe src="https://www.google.com/maps/embed?pb=!1m18&amp;z=2" width="600" height="450" style="border:0;" allowfullscreen="" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>';
+  assert.equal(embedSrcFrom(pasted), 'https://www.google.com/maps/embed?pb=!1m18&z=2');
+  assert.equal(embedSrcFrom("  <IFRAME title='x' SRC='/map/viewer.html?v=1'></IFRAME> "), '/map/viewer.html?v=1');
+  assert.equal(embedSrcFrom(' /map/viewer.html '), '/map/viewer.html');
+  assert.equal(embedSrcFrom('<iframe data-src="x"></iframe>'), '<iframe data-src="x"></iframe>');
+});
 
 test('a new post ID is its date and four hex digits, and a valid page ID', () => {
   const id = newPostId('2026-11-23', new Uint8Array([0xa3, 0x0f]));

@@ -139,8 +139,14 @@ export function createRenderer(schema, theme, baseCss) {
       if (path) return `<div data-wge-path="${path.join('.')}" class="wge-edit-raw">Html</div>`;
       return trustRaw ? node.raw : sanitizers.get(node.type)(node.raw);
     }
+    // An Embed loads another page: in the editor (on the editor's own origin) it is a frame with its
+    // title only, the size it will take, and nothing loaded.
+    if (path && comp.preview === 'placeholder') {
+      return `<div data-wge-path="${path.join('.')}" class="${['wge-edit-raw', ...classesOf(comp, node.props)].join(' ')}">${escapeText(node.props.title ?? comp.name)}</div>`;
+    }
     const [tag, open] = openTag(comp, node, path);
-    if (comp.kind === 'void' || comp.kind === 'inline-void') return open;
+    // An element that HTML does not leave open (iframe) still gets its end tag.
+    if (comp.kind === 'void' || comp.kind === 'inline-void') return comp.render.close ? `${open}</${tag}>` : open;
     if (comp.kind === 'container') {
       const inner = indent + '  ';
       const kids = node.children.map((c, i) => renderNode(c, inner, path && [...path, i], trustRaw)).filter((s) => s !== null);

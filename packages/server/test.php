@@ -673,6 +673,15 @@ $oldDb = null;
 gc_collect_cycles();
 @unlink($oldFile);
 
+// An Embed of a page of this site is made relative at each depth, keeping its query (rendering.md §7.2).
+$embedSource = "<Section>\n  <Embed src=\"/map/viewer.html?v=1\" title=\"全体マップ\" ratio=\"3:4\" />\n  <Embed src=\"https://www.google.com/maps/embed?pb=1&amp;z=2\" title=\"地図\" />\n</Section>\n";
+foreach (['emb0' => ['embed.html', 'map/viewer.html?v=1'], 'emb1' => ['x/embed.html', '../map/viewer.html?v=1'], 'emb2' => ['x/y/embed.html', '../../map/viewer.html?v=1']] as $id => [$path, $want]) {
+    $spost("/api/pages/{$id}/load", ['initialSource' => $embedSource, 'meta' => ['title' => '埋め込み', 'path' => $path]]);
+    [$status] = $spost("/api/pages/{$id}/publish", ['revision' => 0]);
+    $html = $sread($path);
+    check($status === 200 && str_contains($html, '<iframe class="wge-embed wge-embed-ratio-3-4" src="' . $want . '" title="全体マップ" loading="lazy"></iframe>') && str_contains($html, 'src="https://www.google.com/maps/embed?pb=1&amp;z=2"'), "an embedded page of this site is relative at {$path}; a map stays as written");
+}
+
 $siteApi = null;
 removeTree($siteDir);
 

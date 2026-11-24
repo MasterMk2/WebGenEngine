@@ -51,6 +51,12 @@ function attrValue(attr) {
     case 'enum': return pick(attr.values);
     case 'int': return String(attr.min + Math.floor(rand() * (attr.max - attr.min + 1)));
     case 'url': return pick(['/', '/a/b', '#top', 'https://example.com/?a=1&amp;b=2', 'mailto:x@example.com', '../x']);
+    // Allowed places, and places an Embed must refuse (another host, a backslash, a lookalike).
+    case 'embed': return pick([
+      'https://www.google.com/maps/embed?pb=1&amp;z=2', 'https://maps.google.com/maps?q=x&amp;output=embed', '/map/viewer.html?v=1', '/',
+      '//evil.example/x', '/\\evil.example', 'https://evil.example/x', 'https://www.google.com/maps/embedded', 'HTTPS://www.google.com/maps/embed?x',
+      'map/x.html', 'javascript:x', 'https://www.google.com.evil.example/maps/embed?x',
+    ]);
     default: return pick(['', '説明', '"q"'.replace(/"/g, '&quot;'), 'a&amp;b']);
   }
 }
@@ -127,6 +133,7 @@ function randomNode() {
     { type: 'Text', props: { size: 'lg' }, children: [{ type: 'text', value: '追加 の\n文' }] },
     { type: 'Stack', props: { gap: 'sm' }, children: [{ type: 'Heading', props: { level: '2' }, children: [] }] },
     { type: 'Image', props: { src: '/n.png', alt: '<新>' } },
+    { type: 'Embed', props: { src: pick(['/map/viewer.html?v=1', '//evil.example/x', 'https://www.google.com/maps/embed?pb=1']), title: '地図' } },
     { type: 'comment', value: ' new ' },
     { type: 'comment', value: pick(['-', 'a\rb', 'a\r\nb']) },
     { type: 'Html', props: {}, raw: '<hr>' },
@@ -210,12 +217,18 @@ function result(source, ops) {
 // R4 on the published HTML: layout lives only in classes (no style attribute or
 // other attributes outside a fixed set), and every class has a CSS rule.
 // Raw Html blocks are the author's own markup, so they are left out of the check.
-const ALLOWED_ATTRS = new Set(['class', 'href', 'src', 'alt', 'width', 'height', 'loading', 'decoding']);
+const ALLOWED_ATTRS = new Set(['class', 'href', 'src', 'alt', 'width', 'height', 'loading', 'decoding', 'title']);
+// An <iframe> loads only from the places schema.embedSources lists, and is always closed.
+const EMBED_SOURCES = schema.embedSources ?? [];
+const decodeAttr = (v) => v.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+const embedPlaceOk = (src) => !/[\x00-\x20\x7f\\]/.test(src) && EMBED_SOURCES.some((s) => (s === '/' ? src.startsWith('/') && !src.startsWith('//') : src.startsWith(s)));
 function htmlProblem(doc) {
   const html = renderer.renderFragment(stripRaw(doc));
+  if ((html.match(/<iframe[\s>]/g) ?? []).length !== (html.match(/<\/iframe>/g) ?? []).length) return 'an <iframe> left open';
   for (const tag of html.matchAll(/<([a-z0-9]+)((?:\s[a-z-]+="[^"]*")*)>/g)) {
     for (const [, name, value] of tag[2].matchAll(/\s([a-z-]+)="([^"]*)"/g)) {
       if (!ALLOWED_ATTRS.has(name)) return `attribute ${name} on <${tag[1]}>`;
+      if (tag[1] === 'iframe' && name === 'src' && !embedPlaceOk(decodeAttr(value))) return `an <iframe> loads from ${value}`;
       if (name !== 'class') continue;
       for (const cls of value.split(' ')) {
         if (!new RegExp(`\\.${cls}(?![a-z0-9-])`).test(css)) return `class .${cls} has no CSS rule`;

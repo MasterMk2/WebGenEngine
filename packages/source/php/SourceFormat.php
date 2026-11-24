@@ -74,6 +74,8 @@ final class SourceFormat
     private array $components = [];
     private array $spaceTokens;
     private array $urlSchemes;
+    /** @var list<string> where an Embed may load from: address prefixes, and "/" for this site's pages */
+    private array $embedSources;
 
     // Parser state.
     private string $src = '';
@@ -88,6 +90,19 @@ final class SourceFormat
         }
         $this->spaceTokens = $schema['tokens']['space'];
         $this->urlSchemes = $schema['urlSchemes'];
+        $this->embedSources = $schema['embedSources'] ?? [];
+    }
+
+    // An Embed's address starts with one of the listed prefixes; "/" means a page of this site,
+    // never "//" (another host). A backslash is refused before this: browsers read it as "/".
+    private function embedAllowed(string $value): bool
+    {
+        foreach ($this->embedSources as $source) {
+            if ($source === '/' ? str_starts_with($value, '/') && !str_starts_with($value, '//') : str_starts_with($value, $source)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static function fromSchemaFile(string $path): self
@@ -249,6 +264,11 @@ final class SourceFormat
                     return ['E_UNSAFE_URL', "{$name} に {$m[1]}: は使えません"];
                 }
                 return null;
+            case 'embed':
+                if ($value === '' || preg_match('/[\x00-\x20\x7f\\\\]/', $value) === 1) {
+                    return ['E_INVALID_VALUE', "{$name} に空白・制御文字・\\ は使えません"];
+                }
+                return $this->embedAllowed($value) ? null : ['E_UNSAFE_URL', "{$name} には、決まった地図のサービスか、このサイトのページだけを埋め込めます"];
             default:
                 return null;
         }

@@ -47,7 +47,7 @@
 | `/` | `./` | `../` | `../../` |
 | `../media/x.png`（エディタが入れる画像） | `media/x.png` | `../media/x.png` | `../../media/x.png` |
 
-- 対象は `url` の型の属性（`Button` の `href`、`Image` の `src`、`Link` の `href`）だけ。Html の箱の中身は直さない（無害化だけ）
+- 対象は `url` と `embed` の型の属性（`Button` の `href`、`Image` の `src`、`Link` の `href`、`Embed` の `src`）だけ。Html の箱の中身は直さない（無害化だけ）
 - 根からの書き方を公開ページに残さないので、試験の場所のように、サイトをサブパスに置いても切れない
 - `//` で始まる値と、`https:` などの方式のある値はそのまま
 - スタイルシートは `style.css` を同じように指す（深さ 1 なら `../style.css`）

@@ -181,7 +181,8 @@ final class Renderer
         }
         [$tag, $open] = $this->openTag($comp, $node);
         if ($comp['kind'] === 'void' || $comp['kind'] === 'inline-void') {
-            return $open;
+            // An element that HTML does not leave open (iframe) still gets its end tag.
+            return ($comp['render']['close'] ?? false) ? $open . '</' . $tag . '>' : $open;
         }
         if ($comp['kind'] === 'container') {
             $inner = $indent . '  ';
