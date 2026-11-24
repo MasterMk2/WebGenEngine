@@ -62,6 +62,16 @@ final class PageStore
         if (!in_array('description', $columns, true)) {
             $db->exec("ALTER TABLE page_meta ADD COLUMN description TEXT NOT NULL DEFAULT ''");
         }
+        // Where a site's page is written (site.md §3); NULL is the place pages had before sites.
+        if (!in_array('path', $columns, true)) {
+            $db->exec('ALTER TABLE page_meta ADD COLUMN path TEXT');
+        }
+        // The files a site's publishing wrote (site.md §4): only these are ever replaced or removed.
+        // "page" is the page's id, or "" for the stylesheet the pages share.
+        $db->exec('CREATE TABLE IF NOT EXISTS site_files (
+            path TEXT PRIMARY KEY,
+            page TEXT NOT NULL
+        )');
         // Pages taken off the list ("削除", blog.md §2). The page's rows stay, so it can be restored.
         $db->exec('CREATE TABLE IF NOT EXISTS deleted_pages (
             id TEXT PRIMARY KEY REFERENCES pages(id),

@@ -10,6 +10,7 @@ require __DIR__ . '/../source/php/Renderer.php';
 require __DIR__ . '/PageStore.php';
 require __DIR__ . '/Api.php';
 require __DIR__ . '/Blog.php';
+require __DIR__ . '/Site.php';
 require __DIR__ . '/StaticFiles.php';
 require __DIR__ . '/SvcAuth.php';
 require __DIR__ . '/Front.php';
@@ -18,6 +19,7 @@ use WebGenEngine\Server\Api;
 use WebGenEngine\Server\Blog;
 use WebGenEngine\Server\Front;
 use WebGenEngine\Server\PageStore;
+use WebGenEngine\Server\Site;
 use WebGenEngine\Server\SvcAuth;
 use WebGenEngine\Source\Renderer;
 use WebGenEngine\Source\SourceFormat;
@@ -451,6 +453,146 @@ array_map('unlink', glob($site . '/*/*') ?: []);
 array_map('rmdir', glob($site . '/*', GLOB_ONLYDIR) ?: []);
 array_map('unlink', glob($site . '/*') ?: []);
 rmdir($site);
+
+// ------------------------------------------------------- part 6: a site of pages (site.md)
+
+function removeTree(string $dir): void
+{
+    foreach (scandir($dir) ?: [] as $name) {
+        if ($name !== '.' && $name !== '..') {
+            is_dir("{$dir}/{$name}") ? removeTree("{$dir}/{$name}") : unlink("{$dir}/{$name}");
+        }
+    }
+    rmdir($dir);
+}
+
+$schema = json_decode((string) file_get_contents($packages . '/source/schema.json'), true, 512, JSON_THROW_ON_ERROR);
+$siteDir = sys_get_temp_dir() . '/wge-test-pages-' . bin2hex(random_bytes(4));
+mkdir($siteDir);
+$siteDb = PageStore::openDatabase('sqlite::memory:');
+$siteApi = new Api($siteDb, $siteDir, $format, $renderer, siteUrl: 'https://fest.example/', site: new Site('合成の祭', $schema));
+$spost = static fn (string $path, array $body) => $siteApi->handle('POST', $path, json_encode($body), $json);
+$sread = static fn (string $path): string => (string) @file_get_contents($siteDir . '/' . $path);
+$links = "<Section>\n  <Heading level=\"1\">合成の祭</Heading>\n  <Text><Link href=\"/exhibitors.html\">出展</Link>・<Link href=\"/\">トップ</Link>・<Link href=\"/#access\">アクセス</Link>・<Link href=\"https://other.example/a\">よそ</Link>・<Link href=\"//cdn.example/x\">cdn</Link>・<Link href=\"notes.html\">相対</Link></Text>\n  <Image src=\"../media/0123456789abcdef.png\" alt=\"会場\" />\n  <Button href=\"/en/\">English</Button>\n</Section>\n";
+
+[$status, $body] = $siteApi->handle('GET', '/api/ping', '', []);
+check($status === 200 && ($body['site'] ?? null) === true && $body['siteName'] === '合成の祭' && !isset($body['blog']), 'ping says the site is a site of pages');
+foreach (['', '/a.html', 'a/../b.html', 'A.html', 'a.htm', 'a//b.html', 'media/a.html', 'blog/index.html', 'a/b/c/d/e.html', 'a b.html', '.html', 'a.html/', "a.html\n", 3, null] as $bad) {
+    [$status, $body] = $spost('/api/pages/bad/load', ['initialSource' => $links, 'meta' => ['title' => '題', 'path' => $bad]]);
+    check($status === 422 && $body['reason'] === 'invalid-path', 'a bad path is refused: ' . json_encode($bad));
+}
+[$status, $body] = $siteApi->handle('GET', '/api/pages', '', []);
+check($body['pages'] === [], 'refused paths create no page');
+
+// Pages at depth 0, 1 and 2, with no date.
+[$status, $body] = $spost('/api/pages/top/load', ['initialSource' => $links, 'meta' => ['title' => '合成の祭 トップ', 'path' => 'index.html']]);
+check($status === 200 && $body['meta'] === ['title' => '合成の祭 トップ', 'date' => '', 'description' => '', 'path' => 'index.html'], "a site's page needs no date, and keeps its path");
+[$status] = $spost('/api/pages/en-top/load', ['initialSource' => $links, 'meta' => ['title' => 'Fest', 'path' => 'en/index.html']]);
+[$status2] = $spost('/api/pages/deep/load', ['initialSource' => $links, 'meta' => ['title' => '深い', 'path' => 'a/b/deep.html', 'date' => '2026-11-24']]);
+check($status === 200 && $status2 === 200, 'pages one and two folders down are made');
+[$status, $body] = $spost('/api/pages/dated/load', ['initialSource' => $links, 'meta' => ['title' => '日付', 'path' => 'dated.html', 'date' => '2026-02-30']]);
+check($status === 422 && $body['reason'] === 'invalid-date', "a site's page may have a date, but a real one");
+[$status, $body] = $spost('/api/pages/other/load', ['initialSource' => $links, 'meta' => ['title' => '重複', 'path' => 'en/index.html']]);
+check($status === 409 && $body['reason'] === 'path-taken', "another page's path is refused");
+[$status, $body] = $spost('/api/pages/en-top/load', ['initialSource' => '', 'meta' => ['title' => '別の題', 'path' => 'x.html']]);
+check($status === 409 && $body['reason'] === 'exists', 'making a page with the id of another is refused');
+[$status, $body] = $spost('/api/pages/en-top/load', ['initialSource' => '']);
+check($status === 200 && $body['draft']['source'] === $links && $body['meta']['title'] === 'Fest', 'opening a page without meta loads it as it is');
+
+foreach (['top', 'en-top', 'deep'] as $id) {
+    $spost("/api/pages/{$id}/publish", ['revision' => 0]);
+}
+$top = $sread('index.html');
+$en = $sread('en/index.html');
+$deep = $sread('a/b/deep.html');
+check(str_contains($top, 'href="exhibitors.html"') && str_contains($top, 'href="./"') && str_contains($top, 'href="./#access"') && str_contains($top, 'src="media/0123456789abcdef.png"') && str_contains($top, 'href="en/"') && str_contains($top, 'href="style.css"'), 'at depth 0, addresses from the root become relative');
+check(str_contains($en, 'href="../exhibitors.html"') && str_contains($en, 'href="../"') && str_contains($en, 'href="../#access"') && str_contains($en, 'src="../media/0123456789abcdef.png"') && str_contains($en, 'href="../style.css"'), 'at depth 1, they go one folder up');
+check(str_contains($deep, 'href="../../exhibitors.html"') && str_contains($deep, 'src="../../media/0123456789abcdef.png"') && str_contains($deep, 'href="../../style.css"'), 'at depth 2, two folders up');
+check(str_contains($deep, 'href="https://other.example/a"') && str_contains($deep, 'href="//cdn.example/x"') && str_contains($deep, 'href="notes.html"'), 'other addresses stay as written');
+check(preg_match('#(?:href|src)="/(?!/)#', $top . $en . $deep) === 0, 'no address from the root is left on a page');
+check(str_contains($top, '<link rel="canonical" href="https://fest.example/">') && str_contains($en, '<link rel="canonical" href="https://fest.example/en/">') && str_contains($deep, '<link rel="canonical" href="https://fest.example/a/b/deep.html">'), 'the address leaves off a last index.html');
+check(str_contains($top, '<meta property="og:site_name" content="合成の祭">') && str_contains($en, '<meta property="og:image" content="https://fest.example/media/0123456789abcdef.png">') && str_contains($deep, '<meta property="og:image" content="https://fest.example/media/0123456789abcdef.png">'), "the site's name and the first picture's address are written for sharing");
+[, $body] = $siteApi->handle('GET', '/api/pages', '', []);
+check(array_column($body['pages'], 'id') === ['top', 'deep', 'en-top'] && array_column($body['pages'], 'livePath', 'id') === ['top' => 'index.html', 'deep' => 'a/b/deep.html', 'en-top' => 'en/index.html'], 'the list has the top page first, then by path, with where each is written');
+
+// The list of files WGE wrote (site.md §4).
+file_put_contents($siteDir . '/exhibitors.html', 'not written by WGE');
+mkdir($siteDir . '/css');
+file_put_contents($siteDir . '/css/style.css', 'not written by WGE');
+[$status] = $spost('/api/pages/exh/load', ['initialSource' => $links, 'meta' => ['title' => '出展', 'path' => 'exhibitors.html']]);
+[$status, $body] = $spost('/api/pages/exh/publish', ['revision' => 0]);
+check($status === 409 && $body['reason'] === 'path-occupied' && $body['path'] === 'exhibitors.html' && $sread('exhibitors.html') === 'not written by WGE', 'a file WGE did not write is never published over');
+[, $body] = $siteApi->handle('GET', '/api/pages/exh/versions', '', []);
+check($body['versions'] === [], 'and the refused page is not published');
+[$status, $body] = $spost('/api/pages/exh/meta', ['title' => '出展', 'path' => 'exhibitors-2026.html']);
+check($status === 200 && $body['meta']['path'] === 'exhibitors-2026.html', 'the path can be changed');
+[$status] = $spost('/api/pages/exh/publish', ['revision' => 0]);
+check($status === 200 && str_contains($sread('exhibitors-2026.html'), '<title>出展</title>'), 'and the page is published there');
+mkdir($siteDir . '/x');
+file_put_contents($siteDir . '/notdir', 'a file');
+[$status] = $spost('/api/pages/under/load', ['initialSource' => $links, 'meta' => ['title' => '下', 'path' => 'notdir/a.html']]);
+[$status, $body] = $spost('/api/pages/under/publish', ['revision' => 0]);
+check($status === 409 && $body['reason'] === 'path-occupied', 'a file where a folder of the path would be stops the publish');
+
+// A new path takes effect on the next publish only.
+[$status, $body] = $spost('/api/pages/en-top/meta', ['title' => 'Fest!', 'path' => 'en/top.html']);
+check($status === 200 && str_contains($sread('en/index.html'), '<title>Fest!</title>') && !is_file($siteDir . '/en/top.html'), 'changing the path rewrites the published page where it is');
+[, $body] = $siteApi->handle('GET', '/api/pages', '', []);
+$enRow = array_values(array_filter($body['pages'], static fn (array $p) => $p['id'] === 'en-top'))[0];
+check($enRow['path'] === 'en/top.html' && $enRow['livePath'] === 'en/index.html', 'the list tells the next path from the one written now');
+[$status] = $spost('/api/pages/en-top/publish', ['revision' => 0]);
+check($status === 200 && is_file($siteDir . '/en/top.html') && !is_file($siteDir . '/en/index.html'), 'publishing moves the page, removing its old file');
+[$status, $body] = $spost('/api/pages/top/meta', ['title' => 't', 'path' => 'en/top.html']);
+check($status === 409 && $body['reason'] === 'path-taken', 'a path in use is refused when changed');
+
+// Taking a publish back, and the folders left empty.
+$liveIn = static function (string $id) use ($siteApi): int {
+    [, $body] = $siteApi->handle('GET', "/api/pages/{$id}/versions", '', []);
+    return array_values(array_filter($body['versions'], static fn (array $v) => $v['live'] ?? false))[0]['id'];
+};
+[$status] = $spost('/api/pages/deep/undo-publish', ['versionId' => $liveIn('deep')]);
+check($status === 200 && !is_file($siteDir . '/a/b/deep.html') && !is_dir($siteDir . '/a'), 'taking the only publish back removes the file and its empty folders');
+check($sread('exhibitors.html') === 'not written by WGE' && $sread('css/style.css') === 'not written by WGE' && is_dir($siteDir . '/x'), 'files and folders WGE did not write stay');
+[, $body] = $siteApi->handle('GET', '/api/pages', '', []);
+check(array_column($body['pages'], 'livePath', 'id')['deep'] === null, 'a page taken back is written nowhere');
+[$status] = $spost('/api/pages/deep/delete', []);
+[$status, $body] = $spost('/api/pages/again/load', ['initialSource' => $links, 'meta' => ['title' => '同じ場所', 'path' => 'a/b/deep.html']]);
+check($status === 409 && $body['reason'] === 'path-taken', 'a deleted page keeps its path, for when it is restored');
+
+// A stylesheet WGE did not write is not replaced.
+$plainDir = sys_get_temp_dir() . '/wge-test-pages-' . bin2hex(random_bytes(4));
+mkdir($plainDir);
+file_put_contents($plainDir . '/style.css', 'theirs');
+$plainApi = new Api(PageStore::openDatabase('sqlite::memory:'), $plainDir, $format, $renderer, site: new Site('合成', $schema));
+$plainApi->handle('POST', '/api/pages/top/load', json_encode(['initialSource' => $links]), $json);
+[$status, $body] = $plainApi->handle('POST', '/api/pages/top/publish', json_encode(['revision' => 0]), $json);
+check($status === 409 && $body['path'] === 'style.css' && file_get_contents($plainDir . '/style.css') === 'theirs' && !is_file($plainDir . '/index.html'), 'a stylesheet WGE did not write stops the publish');
+[, $body] = $plainApi->handle('GET', '/api/pages', '', []);
+check($body['pages'][0]['path'] === 'index.html' && $body['pages'][0]['livePath'] === null, '"top" is written to index.html when no path is given');
+[$status, $body] = $plainApi->handle('POST', '/api/pages/top/meta', json_encode(['title' => '題']), $json);
+check($status === 200 && $body['meta']['path'] === 'index.html', 'a title change without a path keeps it');
+$plainApi = null;
+removeTree($plainDir);
+
+// A database made before paths gets the column and the list of files.
+$oldFile = sys_get_temp_dir() . '/wge-test-old-' . bin2hex(random_bytes(4)) . '.sqlite';
+$old = new PDO('sqlite:' . $oldFile);
+$old->exec("CREATE TABLE pages (id TEXT PRIMARY KEY, draft_source TEXT NOT NULL, draft_revision INTEGER NOT NULL, draft_saved_at INTEGER, published INTEGER, next_id INTEGER NOT NULL)");
+$old->exec("CREATE TABLE page_meta (id TEXT PRIMARY KEY REFERENCES pages(id), title TEXT NOT NULL, date TEXT NOT NULL, description TEXT NOT NULL DEFAULT '')");
+$old->exec("INSERT INTO pages VALUES ('top', '', 0, NULL, NULL, 1)");
+$old->exec("INSERT INTO page_meta VALUES ('top', '合成の古いトップ', '', '')");
+$old = null;
+$oldDb = PageStore::openDatabase('sqlite:' . $oldFile);
+$columns = array_column($oldDb->query('PRAGMA table_info(page_meta)')->fetchAll(PDO::FETCH_ASSOC), 'name');
+$tables = $oldDb->query("SELECT name FROM sqlite_master WHERE type = 'table'")->fetchAll(PDO::FETCH_COLUMN);
+$kept = $oldDb->query("SELECT title, path FROM page_meta WHERE id = 'top'")->fetch(PDO::FETCH_ASSOC);
+check(in_array('path', $columns, true) && in_array('site_files', $tables, true) && $kept === ['title' => '合成の古いトップ', 'path' => null], 'an older database gets the path column and the list of files, keeping its rows');
+$oldDb = null;
+gc_collect_cycles();
+@unlink($oldFile);
+
+$siteApi = null;
+removeTree($siteDir);
 
 foreach ($failures as $f) {
     echo "FAIL {$f}\n";

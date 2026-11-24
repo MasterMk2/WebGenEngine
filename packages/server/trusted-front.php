@@ -10,6 +10,8 @@
 //   WGE_SITE_URL      where the published site is seen (http:// or https://), for "サイトを見る"
 //   WGE_BLOG_TITLE    when set, the site is a blog with this name: its contents page and feed
 //                     are made from the published posts (docs/design/blog.md)
+//   WGE_SITE_NAME     when set, the site is pages written where their paths say, with a header and
+//                     footer shared by them all (docs/design/site.md). Not with WGE_BLOG_TITLE yet
 // Without a usable key and client ID nothing is served: it never falls back to router.php's
 // open behaviour.
 
@@ -20,6 +22,7 @@ require __DIR__ . '/../source/php/Renderer.php';
 require __DIR__ . '/PageStore.php';
 require __DIR__ . '/Api.php';
 require __DIR__ . '/Blog.php';
+require __DIR__ . '/Site.php';
 require __DIR__ . '/StaticFiles.php';
 require __DIR__ . '/SvcAuth.php';
 require __DIR__ . '/Front.php';
@@ -28,6 +31,7 @@ use WebGenEngine\Server\Api;
 use WebGenEngine\Server\Blog;
 use WebGenEngine\Server\Front;
 use WebGenEngine\Server\PageStore;
+use WebGenEngine\Server\Site;
 use WebGenEngine\Server\SvcAuth;
 use WebGenEngine\Source\Renderer;
 use WebGenEngine\Source\SourceFormat;
@@ -73,13 +77,21 @@ if ($blogTitle !== '' && (mb_strlen($blogTitle) > 120 || preg_match('/[\x00-\x1f
     return $refuse('WGE_BLOG_TITLE must be one line of 120 characters or fewer');
 }
 $blog = $blogTitle === '' ? null : new Blog($blogTitle, $format, $renderer, $siteUrl);
+$siteName = trim((string) getenv('WGE_SITE_NAME'));
+if ($siteName !== '' && !Site::validName($siteName)) {
+    return $refuse('WGE_SITE_NAME must be one line of 120 characters or fewer');
+}
+if ($siteName !== '' && $blog !== null) {
+    return $refuse('WGE_SITE_NAME and WGE_BLOG_TITLE cannot be used together yet (docs/design/site.md §2)');
+}
+$sitePages = $siteName === '' ? null : new Site($siteName, json_decode((string) file_get_contents($packages . '/source/schema.json'), true, 512, JSON_THROW_ON_ERROR));
 $front = new Front(
     new SvcAuth($key, $client, $db),
-    new Api($db, $site, $format, $renderer, siteUrl: $siteUrl, blog: $blog),
+    new Api($db, $site, $format, $renderer, siteUrl: $siteUrl, blog: $blog, site: $sitePages),
     $packages,
     $site,
     $data . '/audit.jsonl',
-    copySamples: $blog === null,
+    copySamples: $blog === null && $sitePages === null,
 );
 $headers = array_change_key_case(function_exists('getallheaders') ? getallheaders() : [], CASE_LOWER);
 [$status, $replyHeaders, $out] = $front->handle($_SERVER['REQUEST_METHOD'] ?? 'GET', $_SERVER['REQUEST_URI'] ?? '/', (string) file_get_contents('php://input'), $headers);
