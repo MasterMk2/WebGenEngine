@@ -56,6 +56,11 @@ final class PageStore
             title TEXT NOT NULL,
             date TEXT NOT NULL
         )');
+        // Pages taken off the list ("削除", blog.md §2). The page's rows stay, so it can be restored.
+        $db->exec('CREATE TABLE IF NOT EXISTS deleted_pages (
+            id TEXT PRIMARY KEY REFERENCES pages(id),
+            at INTEGER NOT NULL
+        )');
         return $db;
     }
 
@@ -111,6 +116,33 @@ final class PageStore
         });
     }
 
+    // "削除" and its restore are the server's only (the editor's store.mjs keeps one page, so the
+    // shared scenarios do not have them). Only a page that is not published can be deleted: the
+    // check and the write share the write lock, so a publish cannot slip in between. A deleted page
+    // answers every call with PageDeleted until it is restored.
+    public function delete(): array
+    {
+        return $this->write(function (array $page): array {
+            if ($page['published'] !== null) {
+                return ['ok' => false, 'reason' => 'published'];
+            }
+            $at = ($this->now)();
+            $this->run('INSERT INTO deleted_pages (id, at) VALUES (?, ?)', [$this->pageId, $at]);
+            return ['ok' => true, 'deletedAt' => $at];
+        });
+    }
+
+    public function restore(): array
+    {
+        $stmt = $this->db->prepare('DELETE FROM deleted_pages WHERE id = ?');
+        $stmt->execute([$this->pageId]);
+        if ($stmt->rowCount() === 0) {
+            $this->page(); // a page never loaded is PageNotLoaded
+            return ['ok' => false, 'reason' => 'not-deleted'];
+        }
+        return ['ok' => true] + $this->state($this->page());
+    }
+
     // Newest first, without the sources.
     public function listVersions(): array
     {
@@ -158,10 +190,14 @@ final class PageStore
 
     private function page(): array
     {
-        $row = $this->row('SELECT * FROM pages WHERE id = ?', [$this->pageId]);
+        $row = $this->row('SELECT p.*, d.at AS deleted_at FROM pages p LEFT JOIN deleted_pages d ON d.id = p.id WHERE p.id = ?', [$this->pageId]);
         if ($row === null) {
             throw new PageNotLoaded("page {$this->pageId} is not loaded");
         }
+        if ($row['deleted_at'] !== null) {
+            throw new PageDeleted("page {$this->pageId} is deleted");
+        }
+        unset($row['deleted_at']);
         foreach (['draft_revision', 'next_id'] as $k) {
             $row[$k] = (int) $row[$k];
         }
@@ -218,6 +254,10 @@ final class PageStore
     }
 }
 
-final class PageNotLoaded extends \RuntimeException
+class PageNotLoaded extends \RuntimeException
+{
+}
+
+final class PageDeleted extends PageNotLoaded
 {
 }

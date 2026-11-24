@@ -47,6 +47,9 @@ final class Api
     {
         try {
             return $this->route($method, $path, $body, $headers);
+        } catch (PageDeleted) {
+            // Restored from the list of deleted pages, it opens again (blog.md §2).
+            return self::reply(404, ['ok' => false, 'reason' => 'deleted']);
         } catch (PageNotLoaded) {
             // Every page is created by load first.
             return self::reply(404, ['ok' => false, 'reason' => 'not-loaded']);
@@ -68,6 +71,9 @@ final class Api
         if ($method === 'GET' && $path === '/api/pages') {
             return self::reply(200, ['ok' => true, 'pages' => $this->listPages(false)]);
         }
+        if ($method === 'GET' && $path === '/api/deleted-pages') {
+            return self::reply(200, ['ok' => true, 'pages' => $this->listDeleted()]);
+        }
         if ($path === '/api/media') {
             if ($method !== 'POST') {
                 return self::reply(405, ['ok' => false, 'reason' => 'method']);
@@ -87,6 +93,10 @@ final class Api
         $store = new PageStore($this->db, $pageId, $this->now);
 
         if ($method === 'GET') {
+            // Writes are refused inside PageStore's write lock; a read only needs this.
+            if ($this->isDeleted($pageId)) {
+                throw new PageDeleted("page {$pageId} is deleted");
+            }
             if ($action === 'versions' && $versionId === null) {
                 return self::reply(200, ['ok' => true, 'versions' => $store->listVersions()]);
             }
@@ -165,6 +175,15 @@ final class Api
                     $this->writeBlog();
                 }
                 return $this->result($result);
+            case 'delete':
+                // The site's own first page stays (without a blog, the editor opens it by default).
+                if ($pageId === 'top') {
+                    return self::reply(409, ['ok' => false, 'reason' => 'top']);
+                }
+                // A published page is taken back first, so nothing on the site changes here.
+                return $this->result($store->delete());
+            case 'restore':
+                return $this->result($store->restore());
         }
         return self::reply(404, ['ok' => false, 'reason' => 'not-found']);
     }
@@ -238,7 +257,8 @@ final class Api
      */
     private function listPages(bool $publishedOnly): array
     {
-        $rows = $this->db->query('SELECT p.id, p.published, p.draft_saved_at, m.title, m.date FROM pages p LEFT JOIN page_meta m ON m.id = p.id')->fetchAll(PDO::FETCH_ASSOC);
+        $rows = $this->db->query('SELECT p.id, p.published, p.draft_saved_at, m.title, m.date FROM pages p LEFT JOIN page_meta m ON m.id = p.id
+            WHERE p.id NOT IN (SELECT id FROM deleted_pages)')->fetchAll(PDO::FETCH_ASSOC);
         $pages = [];
         foreach ($rows as $r) {
             if (($this->blog !== null && $r['id'] === 'top') || ($publishedOnly && $r['published'] === null)) {
@@ -246,7 +266,7 @@ final class Api
             }
             $pages[] = [
                 'id' => (string) $r['id'],
-                'title' => $r['title'] !== null ? (string) $r['title'] : (self::TITLES[$r['id']] ?? (string) $r['id']),
+                'title' => $this->titleOf($r),
                 'date' => $r['date'] !== null ? (string) $r['date'] : null,
                 'published' => $r['published'] !== null,
                 'savedAt' => $r['draft_saved_at'] !== null ? (int) $r['draft_saved_at'] : null,
@@ -254,6 +274,34 @@ final class Api
         }
         usort($pages, static fn (array $a, array $b): int => [$b['date'] ?? '', $b['id']] <=> [$a['date'] ?? '', $a['id']]);
         return $pages;
+    }
+
+    /**
+     * The deleted pages, the last deleted first.
+     *
+     * @return list<array{id: string, title: string, date: string|null, deletedAt: int}>
+     */
+    private function listDeleted(): array
+    {
+        $rows = $this->db->query('SELECT d.id, d.at, m.title, m.date FROM deleted_pages d LEFT JOIN page_meta m ON m.id = d.id ORDER BY d.at DESC, d.id')->fetchAll(PDO::FETCH_ASSOC);
+        return array_map(fn (array $r): array => [
+            'id' => (string) $r['id'],
+            'title' => $this->titleOf($r),
+            'date' => $r['date'] !== null ? (string) $r['date'] : null,
+            'deletedAt' => (int) $r['at'],
+        ], $rows);
+    }
+
+    private function titleOf(array $row): string
+    {
+        return $row['title'] !== null ? (string) $row['title'] : (self::TITLES[$row['id']] ?? (string) $row['id']);
+    }
+
+    private function isDeleted(string $pageId): bool
+    {
+        $q = $this->db->prepare('SELECT 1 FROM deleted_pages WHERE id = ?');
+        $q->execute([$pageId]);
+        return $q->fetchColumn() !== false;
     }
 
     // An image for the pages (JPEG, PNG, GIF or WebP, told by its bytes; never SVG, which can carry

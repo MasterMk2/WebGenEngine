@@ -1202,6 +1202,11 @@ async function saveDraft() {
     saving.failed = 'refused';
     showSaveState('blocked');
     status(serverMessage(res, '保存する権限がありません。書いた内容はこの画面に残っています'), 'error');
+  } else if (res.reason === 'deleted') {
+    // Deleted from the list of posts meanwhile: saves are refused until it is restored there.
+    saving.failed = 'refused';
+    showSaveState('blocked');
+    status(`${DELETED_HELP}書いた内容はこの画面に残っていますが、保存されていません。`, 'error');
   } else {
     saving.failed = res.reason ?? 'unknown';
     showSaveState('failed');
@@ -1320,6 +1325,7 @@ function uploadControl(path) {
 
 // Shown when an answer did not come from the API (requirements §3.3: a WAF on rental servers).
 const WAF_HELP = 'サーバーの防御機能（WAF）が保存を止めた可能性があります。サーバーの管理画面で、この管理画面の場所を WAF の対象から外してください。書いた内容はこの画面に残っています。';
+const DELETED_HELP = 'この記事は削除されています。記事の一覧の「削除した記事」から元に戻すと、また開いて保存できます。';
 
 function showConflict() {
   showSaveState('conflict');
@@ -1565,6 +1571,11 @@ if (ping?.wge === 1) {
     store = remote;
     serverMode = true;
   } catch (e) {
+    if (e.reason === 'deleted') {
+      // Never fall back to this browser's copy: what is written there would not reach the post.
+      status(DELETED_HELP, 'error');
+      throw e;
+    }
     status(`サーバーの保存先を開けなかったため、このブラウザの中に保存します（${e.reason ?? e.message}）`, 'error');
   }
 }
