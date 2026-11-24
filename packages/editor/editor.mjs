@@ -1202,6 +1202,11 @@ async function saveDraft() {
     saving.failed = 'refused';
     showSaveState('blocked');
     status(serverMessage(res, '保存する権限がありません。書いた内容はこの画面に残っています'), 'error');
+  } else if (res.reason === 'deleted') {
+    // Moved to the trash from another tab: saving again would be refused too.
+    saving.failed = 'deleted';
+    showSaveState('blocked');
+    status('この記事は別の画面でゴミ箱に移されたため、保存できません。記事の一覧のゴミ箱から戻してください。書いた内容はこの画面に残っています', 'error');
   } else {
     saving.failed = res.reason ?? 'unknown';
     showSaveState('failed');
@@ -1565,6 +1570,12 @@ if (ping?.wge === 1) {
     store = remote;
     serverMode = true;
   } catch (e) {
+    if (e.reason === 'deleted') {
+      // In the trash (blog.md §5): never fall back to this browser's copy of it.
+      status('この記事はゴミ箱にあります。記事の一覧のゴミ箱から戻すと、また直せます', 'error');
+      $('posts-link').hidden = false;
+      throw e;
+    }
     status(`サーバーの保存先を開けなかったため、このブラウザの中に保存します（${e.reason ?? e.message}）`, 'error');
   }
 }

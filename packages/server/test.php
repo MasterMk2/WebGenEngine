@@ -327,6 +327,43 @@ $liveOf = static function (string $id) use ($blogApi): int {
 $contents = (string) @file_get_contents($site . '/index.html');
 check(str_contains($contents, 'まだ記事はありません') && !is_file($site . '/20261123-a1b2/index.html'), 'taking every post back leaves an empty contents page');
 
+// Deleting moves a post to the trash: off the site and the list, kept until restored.
+[$status] = $bpost('/api/pages/20261123-a1b2/publish', ['revision' => 0]);
+[$status] = $bpost('/api/pages/20261101-c3d4/publish', ['revision' => 0]);
+[$status, $body] = $blogApi->handle('POST', '/api/pages/20261123-a1b2/delete', '{}', ['x-wge-request' => '1', 'content-type' => 'text/plain']);
+check($status === 403, 'deleting needs the same request headers as any change');
+[$status, $body] = $bpost('/api/pages/20261123-a1b2/delete', []);
+$contents = (string) @file_get_contents($site . '/index.html');
+$feed = (string) @file_get_contents($site . '/feed.xml');
+check($status === 200 && $body['wasPublished'] === true && !is_dir($site . '/20261123-a1b2'), 'deleting a published post takes its page and folder off the site');
+check(!str_contains($contents, '20261123-a1b2') && str_contains($contents, '20261101-c3d4/') && !str_contains($feed, '20261123-a1b2') && str_contains($feed, '20261101-c3d4'), 'deleting a post rewrites the contents page and the feed without it');
+[, $body] = $blogApi->handle('GET', '/api/pages', '', []);
+check(array_column($body['pages'], 'id') === ['20261101-c3d4'], 'a deleted post leaves the list');
+[, $body] = $blogApi->handle('GET', '/api/trash', '', []);
+check(count($body['pages']) === 1 && $body['pages'][0]['id'] === '20261123-a1b2' && $body['pages'][0]['title'] === '合成の記事 <b>&"' && is_int($body['pages'][0]['deletedAt']), 'the trash lists the deleted post with its title');
+foreach ([['POST', 'load', ['initialSource' => $post]], ['POST', 'draft', ['source' => $post, 'baseRevision' => 0]], ['POST', 'meta', ['title' => '題', 'date' => '2026-11-23']], ['POST', 'publish', ['revision' => 0]], ['POST', 'delete', []], ['GET', 'versions', null]] as [$method, $action, $input]) {
+    [$status, $body] = $blogApi->handle($method, "/api/pages/20261123-a1b2/{$action}", $input === null ? '' : json_encode($input), $json);
+    check($status === 404 && $body['reason'] === 'deleted', "a post in the trash refuses {$action}");
+}
+[$status] = $bpost('/api/pages/20261123-a1b2/restore', []);
+[, $body] = $blogApi->handle('GET', '/api/pages', '', []);
+[, $trash] = $blogApi->handle('GET', '/api/trash', '', []);
+$restored = array_values(array_filter($body['pages'], static fn (array $p) => $p['id'] === '20261123-a1b2'))[0] ?? null;
+check($status === 200 && $restored !== null && $restored['published'] === false && $trash['pages'] === [], 'restoring brings the post back to the list as a draft');
+check(!is_file($site . '/20261123-a1b2/index.html') && !str_contains((string) @file_get_contents($site . '/index.html'), '20261123-a1b2'), 'restoring does not publish the post again');
+[$status, $body] = $bpost('/api/pages/20261123-a1b2/restore', []);
+check($status === 409 && $body['reason'] === 'not-deleted', 'restoring a post not in the trash is refused');
+[$status] = $bpost('/api/pages/20261123-a1b2/publish', ['revision' => 0]);
+check($status === 200 && is_file($site . '/20261123-a1b2/index.html'), 'a restored post can be published again');
+[$status, $body] = $bpost('/api/pages/missing/delete', []);
+check($status === 404 && $body['reason'] === 'not-loaded', 'deleting a page never loaded is refused');
+[$status] = $bpost('/api/pages/20261123-a1b2/undo-publish', ['versionId' => $liveOf('20261123-a1b2')]);
+[$status] = $bpost('/api/pages/20261101-c3d4/undo-publish', ['versionId' => $liveOf('20261101-c3d4')]);
+$plain = new Api(PageStore::openDatabase('sqlite::memory:'), $site, $format, $renderer);
+$plain->handle('POST', '/api/pages/top/load', json_encode(['initialSource' => $post]), $json);
+[$status, $body] = $plain->handle('POST', '/api/pages/top/delete', '{}', $json);
+check($status === 422 && $body['reason'] === 'protected', 'the front page of a site without a blog cannot be deleted');
+
 // Images: told by their bytes, named by their content, never SVG.
 $png = "\x89PNG\r\n\x1A\n" . str_repeat("\0", 32);
 [$status, $body] = $bpost('/api/media', ['data' => base64_encode($png)]);

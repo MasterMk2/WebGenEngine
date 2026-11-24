@@ -7,10 +7,19 @@ import { cleanTitle, dateLabel, newPostId, postTemplate, today } from './posts-c
 const $ = (id) => document.getElementById(id);
 const headers = { 'content-type': 'application/json', 'x-wge-request': '1' };
 
-function status(text, kind = '') {
+// A status line, with an optional button after the text (such as "元に戻す").
+function status(text, kind = '', action = null) {
   const el = $('status');
-  el.textContent = text;
+  el.replaceChildren(text);
   el.className = `posts-status ${kind}`;
+  if (action) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'link-button';
+    button.textContent = action.label;
+    button.addEventListener('click', action.run, { once: true });
+    el.append(' ', button);
+  }
 }
 
 // The API's answer, or a refusal in the same form (network, or a page that is not the API's).
@@ -44,10 +53,76 @@ function render(pages) {
     const meta = document.createElement('span');
     meta.className = 'post-meta';
     meta.textContent = [dateLabel(page.date), page.published ? '公開中' : '下書き'].filter(Boolean).join('・');
-    li.append(a, meta);
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'row-action';
+    remove.textContent = '削除';
+    remove.setAttribute('aria-label', `「${page.title}」を削除`);
+    remove.addEventListener('click', () => removePost(page));
+    const side = document.createElement('span');
+    side.className = 'post-side';
+    side.append(meta, remove);
+    li.append(a, side);
     if (page.published) li.classList.add('live');
     list.append(li);
   }
+}
+
+function renderTrash(pages) {
+  $('trash').hidden = pages.length === 0;
+  $('trash-title').textContent = `ゴミ箱（${pages.length} 件）`;
+  const list = $('trash-list');
+  list.replaceChildren();
+  for (const page of pages) {
+    const li = document.createElement('li');
+    const name = document.createElement('span');
+    name.className = 'trash-name';
+    name.textContent = page.title;
+    const back = document.createElement('button');
+    back.type = 'button';
+    back.className = 'row-action';
+    back.textContent = '戻す';
+    back.setAttribute('aria-label', `「${page.title}」を一覧に戻す`);
+    back.addEventListener('click', () => restorePost(page));
+    const side = document.createElement('span');
+    side.className = 'post-side';
+    const meta = document.createElement('span');
+    meta.className = 'post-meta';
+    meta.textContent = dateLabel(page.date);
+    side.append(meta, back);
+    li.append(name, side);
+    list.append(li);
+  }
+}
+
+async function refresh() {
+  const [listed, trash] = await Promise.all([call('/pages'), call('/trash')]);
+  if (listed.ok) render(listed.pages);
+  else status(said(listed, '記事の一覧を読み込めませんでした。'), 'error');
+  if (trash.ok) renderTrash(trash.pages);
+}
+
+// Deleting moves the post to the trash, so it can be undone; a published one leaves the site
+// at once, so that one is asked first.
+async function removePost(page) {
+  if (page.published && !confirm(`「${page.title}」は公開中です。削除するとサイトから消えます。ゴミ箱から戻すと下書きに戻ります（もう一度公開が要ります）。削除しますか？`)) return;
+  const res = await call(`/pages/${page.id}/delete`, {});
+  if (!res.ok) {
+    status(said(res, '削除できませんでした。もう一度押してください。'), 'error');
+    return;
+  }
+  await refresh();
+  status(`「${page.title}」をゴミ箱に移しました。`, '', { label: '元に戻す', run: () => restorePost(page) });
+}
+
+async function restorePost(page) {
+  const res = await call(`/pages/${page.id}/restore`, {});
+  if (!res.ok && res.reason !== 'not-deleted') {
+    status(said(res, '戻せませんでした。もう一度押してください。'), 'error');
+    return;
+  }
+  await refresh();
+  status(`「${page.title}」を下書きとして一覧に戻しました。`);
 }
 
 const ping = await call('/ping');
@@ -63,9 +138,7 @@ if (ping.ok === false) {
     $('view-site').hidden = false;
   }
   $('new-date').value = today();
-  const listed = await call('/pages');
-  if (listed.ok) render(listed.pages);
-  else status(said(listed, '記事の一覧を読み込めませんでした。'), 'error');
+  await refresh();
 }
 
 $('new-post').addEventListener('submit', async (event) => {

@@ -68,6 +68,9 @@ final class Api
         if ($method === 'GET' && $path === '/api/pages') {
             return self::reply(200, ['ok' => true, 'pages' => $this->listPages(false)]);
         }
+        if ($method === 'GET' && $path === '/api/trash') {
+            return self::reply(200, ['ok' => true, 'pages' => $this->listTrash()]);
+        }
         if ($path === '/api/media') {
             if ($method !== 'POST') {
                 return self::reply(405, ['ok' => false, 'reason' => 'method']);
@@ -85,6 +88,11 @@ final class Api
         }
         $versionId = isset($m[3]) ? (int) $m[3] : null;
         $store = new PageStore($this->db, $pageId, $this->now);
+        // A page in the trash answers nothing but "restore" (blog.md §5).
+        $trashed = $this->trashedAt($pageId) !== null;
+        if ($trashed && !($method === 'POST' && $action === 'restore')) {
+            return self::reply(404, ['ok' => false, 'reason' => 'deleted']);
+        }
 
         if ($method === 'GET') {
             if ($action === 'versions' && $versionId === null) {
@@ -165,8 +173,58 @@ final class Api
                     $this->writeBlog();
                 }
                 return $this->result($result);
+            case 'delete':
+                // Moves the page to the trash: off the site and out of the list, but kept.
+                // The front page of a site without a blog is the site itself and stays.
+                if ($pageId === 'top') {
+                    return self::reply(422, ['ok' => false, 'reason' => 'protected']);
+                }
+                $wasLive = $store->publishedSource() !== null;
+                $store->takeDown();
+                $this->db->prepare('INSERT INTO page_trash (id, at) VALUES (?, ?)')->execute([$pageId, $this->now()]);
+                if ($wasLive) {
+                    $this->writeSite($pageId, null);
+                }
+                $this->writeBlog();
+                return self::reply(200, ['ok' => true, 'wasPublished' => $wasLive]);
+            case 'restore':
+                // Back to the list as a draft; publishing it again is the writer's choice.
+                if (!$trashed) {
+                    return self::reply(409, ['ok' => false, 'reason' => 'not-deleted']);
+                }
+                $this->db->prepare('DELETE FROM page_trash WHERE id = ?')->execute([$pageId]);
+                return self::reply(200, ['ok' => true]);
         }
         return self::reply(404, ['ok' => false, 'reason' => 'not-found']);
+    }
+
+    private function now(): int
+    {
+        return $this->now !== null ? ($this->now)() : (int) floor(microtime(true) * 1000);
+    }
+
+    private function trashedAt(string $pageId): ?int
+    {
+        $q = $this->db->prepare('SELECT at FROM page_trash WHERE id = ?');
+        $q->execute([$pageId]);
+        $at = $q->fetchColumn();
+        return $at === false ? null : (int) $at;
+    }
+
+    /**
+     * The pages in the trash, most recently deleted first.
+     *
+     * @return list<array{id: string, title: string, date: string|null, deletedAt: int}>
+     */
+    private function listTrash(): array
+    {
+        $rows = $this->db->query('SELECT t.id, t.at, m.title, m.date FROM page_trash t LEFT JOIN page_meta m ON m.id = t.id ORDER BY t.at DESC, t.id')->fetchAll(PDO::FETCH_ASSOC);
+        return array_map(static fn (array $r): array => [
+            'id' => (string) $r['id'],
+            'title' => $r['title'] !== null ? (string) $r['title'] : (string) $r['id'],
+            'date' => $r['date'] !== null ? (string) $r['date'] : null,
+            'deletedAt' => (int) $r['at'],
+        ], $rows);
     }
 
     // A page on another site can send a plain form POST here, but not one with a custom header
@@ -238,7 +296,7 @@ final class Api
      */
     private function listPages(bool $publishedOnly): array
     {
-        $rows = $this->db->query('SELECT p.id, p.published, p.draft_saved_at, m.title, m.date FROM pages p LEFT JOIN page_meta m ON m.id = p.id')->fetchAll(PDO::FETCH_ASSOC);
+        $rows = $this->db->query('SELECT p.id, p.published, p.draft_saved_at, m.title, m.date FROM pages p LEFT JOIN page_meta m ON m.id = p.id WHERE p.id NOT IN (SELECT id FROM page_trash)')->fetchAll(PDO::FETCH_ASSOC);
         $pages = [];
         foreach ($rows as $r) {
             if (($this->blog !== null && $r['id'] === 'top') || ($publishedOnly && $r['published'] === null)) {
@@ -309,6 +367,10 @@ final class Api
         if ($source === null) {
             if (is_file($file)) {
                 unlink($file);
+            }
+            // The post's own folder goes too, when nothing else is in it.
+            if ($pageId !== 'top' && is_dir(dirname($file)) && (scandir(dirname($file)) ?: []) === ['.', '..']) {
+                rmdir(dirname($file));
             }
             return;
         }

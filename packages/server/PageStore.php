@@ -56,6 +56,11 @@ final class PageStore
             title TEXT NOT NULL,
             date TEXT NOT NULL
         )');
+        // Pages moved to the trash (blog.md §5): hidden from the list and the site, kept until restored.
+        $db->exec('CREATE TABLE IF NOT EXISTS page_trash (
+            id TEXT PRIMARY KEY REFERENCES pages(id),
+            at INTEGER NOT NULL
+        )');
         return $db;
     }
 
@@ -107,6 +112,16 @@ final class PageStore
                 return ['ok' => false, 'reason' => 'not-live'];
             }
             $this->run('UPDATE pages SET published = ? WHERE id = ?', [$row['previous'], $this->pageId]);
+            return ['ok' => true] + $this->state($this->page());
+        });
+    }
+
+    // Takes the page off the site whatever version is live (moving it to the trash). The
+    // versions stay, so publishing again later works as before.
+    public function takeDown(): array
+    {
+        return $this->write(function (array $page): array {
+            $this->run('UPDATE pages SET published = NULL WHERE id = ?', [$this->pageId]);
             return ['ok' => true] + $this->state($this->page());
         });
     }
