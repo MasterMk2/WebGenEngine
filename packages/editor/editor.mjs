@@ -69,7 +69,19 @@ TEMPLATES.Table = { type: 'Table', props: {}, children: [headed('項目', '内�
 TEMPLATES.Row = headed('項目', '内容'); // replaced by a row shaped like the table's last (rowLike)
 TEMPLATES.HeaderCell = { type: 'HeaderCell', props: { scope: 'row' }, children: [{ type: 'text', value: '項目' }] };
 TEMPLATES.Cell = { type: 'Cell', props: {}, children: [{ type: 'text', value: '内容' }] };
-const PRESET_NAMES = { Card: 'カード', Notice: 'お知らせ枠' };
+// The opening of a page (a hero): the page's title and what matters most on the main colour,
+// with two buttons. Only parts there already are; the theme's colour does the rest.
+TEMPLATES.Hero = { type: 'Section', props: { padding: 'lg', background: 'primary' }, children: [
+  { type: 'Stack', props: { gap: 'md' }, children: [
+    { type: 'Heading', props: { level: '1' }, children: [{ type: 'text', value: 'ページの題名' }] },
+    { type: 'Text', props: {}, children: [{ type: 'text', value: 'いちばん伝えたいこと（日時・場所など）を書きます。' }] },
+    { type: 'Stack', props: { direction: 'horizontal', gap: 'sm' }, children: [
+      { type: 'Button', props: { href: '/' }, children: [{ type: 'text', value: 'くわしく見る' }] },
+      { type: 'Button', props: { href: '/', variant: 'secondary' }, children: [{ type: 'text', value: 'ほかの案内' }] },
+    ] },
+  ] },
+] };
+const PRESET_NAMES = { Card: 'カード', Notice: 'お知らせ枠', Hero: 'ページの冒頭' };
 const LEGACY_KEY = 'wge-editor-source'; // the single slot the prototype used before the page store
 const PREVIEW_CSS = `
 [data-wge-path] { cursor: grab; }
@@ -81,8 +93,9 @@ const PREVIEW_CSS = `
 /* An empty row or cell keeps room to click on. */
 .wge-table tr:empty { height: 2em; outline: 1px dashed #9aa3ad; outline-offset: -2px; }
 .wge-table :is(th, td):empty { min-width: 3em; height: 1.7em; }
-/* Room above the first block for the toolbar of the selected block (placeBlockbar). */
-body { padding-top: 44px; }
+/* Room above the first block for the toolbar of the selected block (placeBlockbar): the toolbar
+   is about 35px tall and stands 6px off, 4px from the edge. A section at the very top needs it all. */
+body { padding-top: 48px; }
 `;
 
 const $ = (id) => document.getElementById(id);
@@ -1098,7 +1111,7 @@ insertPoint.addEventListener('pointerleave', (e) => {
 
 // The menu lists the everyday blocks first; the boxes for layout come after a rule.
 // The parts of a table come last: in a table only a row fits, in a row only cells (the schema's rules).
-const MENU = [['Heading', 'Text', 'Image', 'Button'], ['Card', 'Notice', 'Embed', 'Table'], ['Section', 'Stack', 'Grid'], ['Row', 'HeaderCell', 'Cell']];
+const MENU = [['Heading', 'Text', 'Image', 'Button'], ['Card', 'Notice', 'Embed', 'Table'], ['Hero', 'Section', 'Stack', 'Grid'], ['Row', 'HeaderCell', 'Cell']];
 let menuTarget = null;
 
 // Only what may stand in the target is offered (source-format.md §4.1).
@@ -1146,9 +1159,16 @@ function insertBlock(name) {
   // A new row takes the shape of the table's last one.
   const node = name === 'Row' ? rowLike(nodeAt(state.doc, target.parent)) : structuredClone(TEMPLATES[name]);
   if (!apply((doc) => sf.edit.insert(doc, target.parent, target.index, node), path)) return;
+  if (name === 'Hero' && countTitles(state.doc) > 1) status('ページの冒頭を足しました。ページの題名（見出し 1）が 2 つになったので、前からある方を消すか、見出し 2 にしてください', 'ok');
   // A new heading or paragraph starts with its placeholder selected, so typing replaces it.
   if (components.get(node.type).kind === 'text') afterLoad = () => startEditing(path, null, { selectAll: true });
   else if (node.type === 'Row' && node.children.length > 0) afterLoad = () => startEditing([...path, 0], null, { selectAll: true });
+}
+
+// Level-1 headings in the page: a page has one title.
+function countTitles(node) {
+  const own = node.type === 'Heading' && node.props?.level === '1' ? 1 : 0;
+  return own + (node.children ?? []).reduce((n, c) => n + (c.children ? countTitles(c) : 0), 0);
 }
 
 // ------------------------------------------------------------------ tables
