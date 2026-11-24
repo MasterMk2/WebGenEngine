@@ -62,3 +62,7 @@ a:focus-visible { outline: 2px solid var(--wge-color-primary); outline-offset: 2
 .wge-ratio-1-1 { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; }
 .wge-ratio-4-3 { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
 .wge-ratio-16-9 { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
+
+/* The site's header and footer (site.md §5): set apart from the page by a line. */
+.wge-site-header { border-block-end: 1px solid var(--wge-color-subtle); }
+.wge-site-footer { border-block-start: 1px solid var(--wge-color-subtle); }

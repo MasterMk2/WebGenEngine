@@ -16,11 +16,13 @@ require __DIR__ . '/../source/php/Renderer.php';
 require __DIR__ . '/PageStore.php';
 require __DIR__ . '/Api.php';
 require __DIR__ . '/Blog.php';
+require __DIR__ . '/Site.php';
 require __DIR__ . '/StaticFiles.php';
 
 use WebGenEngine\Server\Api;
 use WebGenEngine\Server\Blog;
 use WebGenEngine\Server\PageStore;
+use WebGenEngine\Server\Site;
 use WebGenEngine\Server\StaticFiles;
 use WebGenEngine\Source\Renderer;
 use WebGenEngine\Source\SourceFormat;
@@ -44,8 +46,9 @@ if (str_starts_with($path, '/api/')) {
     $port = getenv('WGE_PORT') ?: '8766';
     $format = SourceFormat::fromSchemaFile($packages . '/source/schema.json');
     $renderer = Renderer::fromFiles($packages . '/source');
-    // WGE_BLOG_TITLE makes the site a blog, as with trusted-front.php (blog.md).
+    // WGE_BLOG_TITLE makes the site a blog, and WGE_SITE_NAME a site of pages, as with trusted-front.php.
     $blogTitle = trim((string) getenv('WGE_BLOG_TITLE'));
+    $siteName = trim((string) getenv('WGE_SITE_NAME'));
     $api = new Api(
         $db,
         $site,
@@ -53,6 +56,7 @@ if (str_starts_with($path, '/api/')) {
         $renderer,
         hosts: ["127.0.0.1:{$port}", "localhost:{$port}"],
         blog: $blogTitle === '' ? null : new Blog($blogTitle, $format, $renderer),
+        site: $siteName === '' || $blogTitle !== '' ? null : new Site($siteName, json_decode((string) file_get_contents($packages . '/source/schema.json'), true, 512, JSON_THROW_ON_ERROR)),
     );
     $headers = array_change_key_case(function_exists('getallheaders') ? getallheaders() : [], CASE_LOWER);
     [$status, $body] = $api->handle($_SERVER['REQUEST_METHOD'], $path, (string) file_get_contents('php://input'), $headers);

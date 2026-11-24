@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace WebGenEngine\Server;
 
 use PDO;
+use WebGenEngine\Source\Document;
 use WebGenEngine\Source\Node;
 use WebGenEngine\Source\RenderError;
 use WebGenEngine\Source\Renderer;
@@ -39,6 +40,8 @@ final class Api
         private readonly ?string $siteUrl = null,
         /** With a blog, "top" is its contents page, made from the published posts (blog.md) */
         private readonly ?Blog $blog = null,
+        /** With a site, each page is written where its path says, and only files WGE wrote are touched (site.md) */
+        private readonly ?Site $site = null,
     ) {
     }
 
@@ -69,10 +72,12 @@ final class Api
             return self::reply(403, ['ok' => false, 'reason' => 'forbidden']);
         }
         if ($method === 'GET' && $path === '/api/ping') {
-            return self::reply(200, ['ok' => true] + ($this->siteUrl !== null ? ['siteUrl' => $this->siteUrl] : []) + ($this->blog !== null ? ['blog' => true, 'blogTitle' => $this->blog->title()] : []));
+            return self::reply(200, ['ok' => true] + ($this->siteUrl !== null ? ['siteUrl' => $this->siteUrl] : []) + ($this->blog !== null ? ['blog' => true, 'blogTitle' => $this->blog->title()] : [])
+                + ($this->site !== null ? ['site' => true, 'siteName' => $this->site->name()] : []));
         }
         if ($method === 'GET' && $path === '/api/pages') {
-            return self::reply(200, ['ok' => true, 'pages' => $this->listPages(false)]);
+            // A site's header and footer are listed apart from its pages (site.md §5).
+            return self::reply(200, ['ok' => true, 'pages' => $this->listPages(false)] + ($this->site !== null ? ['parts' => $this->listParts()] : []));
         }
         if ($method === 'GET' && $path === '/api/deleted-pages') {
             return self::reply(200, ['ok' => true, 'pages' => $this->listDeleted()]);
@@ -90,6 +95,11 @@ final class Api
         [, $pageId, $action] = $m;
         // With a blog, its contents page is made from the posts and never edited.
         if ($this->blog !== null && $pageId === 'top') {
+            return self::reply(404, ['ok' => false, 'reason' => 'not-found']);
+        }
+        // A site's own parts are its header and footer only.
+        $isPart = $this->site !== null && Site::isPart($pageId);
+        if ($this->site !== null && !$isPart && str_starts_with($pageId, Site::PART_PREFIX)) {
             return self::reply(404, ['ok' => false, 'reason' => 'not-found']);
         }
         $versionId = isset($m[3]) ? (int) $m[3] : null;
@@ -125,16 +135,35 @@ final class Api
                 if (($problem = $this->checkSource($source)) !== null) {
                     return $problem;
                 }
-                // A new page may come with its title and date (a new blog post).
+                // A new page may come with its title and date (a new blog post), or a site's page with its path.
                 $meta = $input['meta'] ?? null;
-                if ($meta !== null && ($problem = self::checkMeta($meta)) !== null) {
+                // The header and footer have no title nor path.
+                if ($isPart && $meta !== null) {
+                    return self::reply(409, ['ok' => false, 'reason' => 'part']);
+                }
+                if ($meta !== null && ($problem = $this->checkMeta($meta)) !== null) {
                     return $problem;
+                }
+                if ($meta !== null && $this->site !== null) {
+                    // An id that has its title already is another page: never open it in its place.
+                    if ($this->metaOf($pageId) !== null) {
+                        return self::reply(409, ['ok' => false, 'reason' => 'exists']);
+                    }
+                    if (($problem = $this->checkPathFree($pageId, $meta['path'] ?? null)) !== null) {
+                        return $problem;
+                    }
                 }
                 $state = $store->load($source);
                 if ($meta !== null && $this->metaOf($pageId) === null) {
-                    $this->setMeta($pageId, $meta['title'], $meta['date'], $meta['description'] ?? '');
+                    $this->setMeta($pageId, $meta['title'], $meta['date'] ?? '', $meta['description'] ?? '', $this->site !== null ? ($meta['path'] ?? null) : null);
                 }
-                return self::reply(200, ['ok' => true] + $state + ['meta' => $this->metaOf($pageId)]);
+                // A site's page opened without its title yet (the top page, opened directly) gets the
+                // fields filled as it is written now, so its title and path can be set in the editor.
+                $kept = $this->metaOf($pageId);
+                if ($kept === null && $this->site !== null && !$isPart) {
+                    $kept = ['title' => self::TITLES[$pageId] ?? $pageId, 'date' => '', 'description' => '', 'path' => $this->pathOf($pageId), 'livePath' => $this->livePath($pageId)];
+                }
+                return self::reply(200, ['ok' => true] + $state + ['meta' => $kept]);
             case 'draft':
                 $source = $input['source'] ?? null;
                 $base = $input['baseRevision'] ?? null;
@@ -146,12 +175,21 @@ final class Api
                 }
                 return $this->result($store->saveDraft($source, $base));
             case 'meta':
-                if (($problem = self::checkMeta($input)) !== null) {
+                if ($isPart) {
+                    return self::reply(409, ['ok' => false, 'reason' => 'part']);
+                }
+                if (($problem = $this->checkMeta($input)) !== null) {
                     return $problem;
                 }
                 $published = $store->publishedSource();
-                // Without "description", the one kept stays.
-                $this->setMeta($pageId, $input['title'], $input['date'], $input['description'] ?? null);
+                $path = $this->site !== null ? ($input['path'] ?? null) : null;
+                if (($problem = $this->checkPathFree($pageId, $path)) !== null) {
+                    return $problem;
+                }
+                // Without "description" (or a site's "path"), the one kept stays.
+                $this->setMeta($pageId, $input['title'], $input['date'] ?? '', $input['description'] ?? null, $path);
+                // A new path takes effect when the page is next published (site.md §3), so a published
+                // page is written again where it is now.
                 if ($published !== null) {
                     $this->writeSite($pageId, $published);
                 }
@@ -162,9 +200,13 @@ final class Api
                 if (!is_int($revision)) {
                     return self::reply(400, ['ok' => false, 'reason' => 'bad-request']);
                 }
+                // A site's page is not published over a file WGE did not write (site.md §4).
+                if ($this->site !== null && ($problem = $this->checkWritable($pageId)) !== null) {
+                    return $problem;
+                }
                 $result = $store->publish($revision);
                 if ($result['ok']) {
-                    $this->writeSite($pageId, $store->publishedSource());
+                    $this->writeSite($pageId, $store->publishedSource(), true);
                     $this->writeBlog();
                 }
                 return $this->result($result);
@@ -183,6 +225,9 @@ final class Api
                 // The site's own first page stays (without a blog, the editor opens it by default).
                 if ($pageId === 'top') {
                     return self::reply(409, ['ok' => false, 'reason' => 'top']);
+                }
+                if ($isPart) {
+                    return self::reply(409, ['ok' => false, 'reason' => 'part']);
                 }
                 // A published page is taken back first, so nothing on the site changes here.
                 return $this->result($store->delete());
@@ -225,16 +270,21 @@ final class Api
         return null;
     }
 
-    // A title of one line (1–120 characters) and a real date written YYYY-MM-DD.
-    private static function checkMeta(mixed $meta): ?array
+    // A title of one line (1–120 characters) and a real date written YYYY-MM-DD. A site's page needs
+    // no date, and may have a path (site.md §3).
+    private function checkMeta(mixed $meta): ?array
     {
         $title = is_array($meta) ? ($meta['title'] ?? null) : null;
         $date = is_array($meta) ? ($meta['date'] ?? null) : null;
         if (!is_string($title) || !mb_check_encoding($title, 'UTF-8') || trim($title) === '' || mb_strlen($title) > self::MAX_TITLE || preg_match('/[\x00-\x1f\x7f]/', $title) === 1) {
             return self::reply(422, ['ok' => false, 'reason' => 'invalid-title']);
         }
-        if (!is_string($date) || preg_match('/^(\d{4})-(\d{2})-(\d{2})$/D', $date, $d) !== 1 || !checkdate((int) $d[2], (int) $d[3], (int) $d[1])) {
+        $noDate = $this->site !== null && ($date === null || $date === '');
+        if (!$noDate && (!is_string($date) || preg_match('/^(\d{4})-(\d{2})-(\d{2})$/D', $date, $d) !== 1 || !checkdate((int) $d[2], (int) $d[3], (int) $d[1]))) {
             return self::reply(422, ['ok' => false, 'reason' => 'invalid-date']);
+        }
+        if ($this->site !== null && array_key_exists('path', $meta) && !Site::validPath($meta['path'])) {
+            return self::reply(422, ['ok' => false, 'reason' => 'invalid-path']);
         }
         // An optional description of one line, up to 300 characters; empty means none.
         $description = $meta['description'] ?? '';
@@ -244,21 +294,129 @@ final class Api
         return null;
     }
 
-    /** @return array{title: string, date: string, description: string}|null */
+    /** @return array{title: string, date: string, description: string, path?: string}|null a site's page has its path too */
     private function metaOf(string $pageId): ?array
     {
         $q = $this->db->prepare('SELECT title, date, description FROM page_meta WHERE id = ?');
         $q->execute([$pageId]);
         $row = $q->fetch(PDO::FETCH_ASSOC);
-        return $row === false ? null : ['title' => (string) $row['title'], 'date' => (string) $row['date'], 'description' => (string) $row['description']];
+        if ($row === false) {
+            return null;
+        }
+        $meta = ['title' => (string) $row['title'], 'date' => (string) $row['date'], 'description' => (string) $row['description']];
+        // A site's page: where it goes when next published, and where it is now (null: nowhere).
+        return $this->site !== null ? $meta + ['path' => $this->pathOf($pageId), 'livePath' => $this->livePath($pageId)] : $meta;
     }
 
-    // A null description keeps the one stored (or none, for a new row).
-    private function setMeta(string $pageId, string $title, string $date, ?string $description): void
+    // A null description (or path) keeps the one stored (or none, for a new row).
+    private function setMeta(string $pageId, string $title, string $date, ?string $description, ?string $path = null): void
     {
-        $this->db->prepare('INSERT INTO page_meta (id, title, date, description) VALUES (?, ?, ?, COALESCE(?, \'\'))
-            ON CONFLICT(id) DO UPDATE SET title = excluded.title, date = excluded.date, description = COALESCE(?, page_meta.description)')
-            ->execute([$pageId, trim($title), $date, $description === null ? null : trim($description), $description === null ? null : trim($description)]);
+        $description = $description === null ? null : trim($description);
+        $this->db->prepare('INSERT INTO page_meta (id, title, date, description, path) VALUES (?, ?, ?, COALESCE(?, \'\'), ?)
+            ON CONFLICT(id) DO UPDATE SET title = excluded.title, date = excluded.date, description = COALESCE(?, page_meta.description), path = COALESCE(?, page_meta.path)')
+            ->execute([$pageId, trim($title), $date, $description, $path, $description, $path]);
+    }
+
+    // ------------------------------------------------------------ a site's paths (site.md §3, §4)
+
+    /** Where a site's page is written when it is next published. */
+    private function pathOf(string $pageId): string
+    {
+        $q = $this->db->prepare('SELECT path FROM page_meta WHERE id = ?');
+        $q->execute([$pageId]);
+        $path = $q->fetchColumn();
+        return is_string($path) && $path !== '' ? $path : Site::defaultPath($pageId);
+    }
+
+    /** Where a site's page is written now, by the list of files WGE wrote; null when it is not. */
+    private function livePath(string $pageId): ?string
+    {
+        $q = $this->db->prepare('SELECT path FROM site_files WHERE page = ? ORDER BY path LIMIT 1');
+        $q->execute([$pageId]);
+        $path = $q->fetchColumn();
+        return is_string($path) ? $path : null;
+    }
+
+    // A path no other page has, deleted ones too (they may be restored). Null is no change.
+    private function checkPathFree(string $pageId, ?string $path): ?array
+    {
+        if ($this->site === null || $path === null) {
+            return null;
+        }
+        foreach ($this->db->query('SELECT id FROM pages')->fetchAll(PDO::FETCH_COLUMN) as $other) {
+            if ((string) $other !== $pageId && !Site::isPart((string) $other) && $this->pathOf((string) $other) === $path) {
+                return self::reply(409, ['ok' => false, 'reason' => 'path-taken']);
+            }
+        }
+        return null;
+    }
+
+    // Before publishing: the page's path and the stylesheet are free, or files WGE wrote for them.
+    // The header and footer have no file of their own; the pages they go in are written already.
+    private function checkWritable(string $pageId): ?array
+    {
+        if (Site::isPart($pageId)) {
+            return null;
+        }
+        foreach ([[$this->pathOf($pageId), $pageId], ['style.css', '']] as [$path, $owner]) {
+            if (!$this->mayWrite($path, $owner)) {
+                return self::reply(409, ['ok' => false, 'reason' => 'path-occupied', 'path' => $path]);
+            }
+        }
+        return null;
+    }
+
+    // A file may be written when the list says it is $owner's, or when nothing is there (nor a file
+    // where one of its folders would be).
+    private function mayWrite(string $path, string $owner): bool
+    {
+        $q = $this->db->prepare('SELECT page FROM site_files WHERE path = ?');
+        $q->execute([$path]);
+        $listed = $q->fetchColumn();
+        if ($listed !== false) {
+            return (string) $listed === $owner;
+        }
+        $file = $this->siteDir . '/' . $path;
+        if (file_exists($file) || is_link($file)) {
+            return false;
+        }
+        for ($dir = dirname($path); $dir !== '.'; $dir = dirname($dir)) {
+            if (file_exists($this->siteDir . '/' . $dir) && !is_dir($this->siteDir . '/' . $dir)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private function writeOwned(string $path, string $owner, string $content): bool
+    {
+        if (!$this->mayWrite($path, $owner)) {
+            error_log('wge: not writing ' . $path . ': a file WGE did not write is there');
+            return false;
+        }
+        self::writeAtomically($this->siteDir . '/' . $path, $content);
+        $this->db->prepare('INSERT OR REPLACE INTO site_files (path, page) VALUES (?, ?)')->execute([$path, $owner]);
+        return true;
+    }
+
+    // Removes a file WGE wrote (never another), then the folders it leaves empty, up to the site's root.
+    private function removeOwned(string $path): void
+    {
+        $q = $this->db->prepare('DELETE FROM site_files WHERE path = ?');
+        $q->execute([$path]);
+        if ($q->rowCount() === 0) {
+            return;
+        }
+        if (is_file($this->siteDir . '/' . $path)) {
+            unlink($this->siteDir . '/' . $path);
+        }
+        for ($dir = dirname($path); $dir !== '.'; $dir = dirname($dir)) {
+            $full = $this->siteDir . '/' . $dir;
+            if (!is_dir($full) || (scandir($full) ?: []) !== ['.', '..']) {
+                break;
+            }
+            rmdir($full);
+        }
     }
 
     /**
@@ -272,10 +430,10 @@ final class Api
             WHERE p.id NOT IN (SELECT id FROM deleted_pages)')->fetchAll(PDO::FETCH_ASSOC);
         $pages = [];
         foreach ($rows as $r) {
-            if (($this->blog !== null && $r['id'] === 'top') || ($publishedOnly && $r['published'] === null)) {
+            if (($this->blog !== null && $r['id'] === 'top') || ($publishedOnly && $r['published'] === null) || ($this->site !== null && Site::isPart((string) $r['id']))) {
                 continue;
             }
-            $pages[] = [
+            $page = [
                 'id' => (string) $r['id'],
                 'title' => $this->titleOf($r),
                 'date' => $r['date'] !== null ? (string) $r['date'] : null,
@@ -283,6 +441,12 @@ final class Api
                 'published' => $r['published'] !== null,
                 'savedAt' => $r['draft_saved_at'] !== null ? (int) $r['draft_saved_at'] : null,
             ];
+            // A site's page: where it goes when next published, and where it is now (site.md §3).
+            $pages[] = $this->site !== null ? $page + ['path' => $this->pathOf($page['id']), 'livePath' => $this->livePath($page['id'])] : $page;
+        }
+        if ($this->site !== null) {
+            usort($pages, static fn (array $a, array $b): int => [$a['id'] !== 'top', $a['path']] <=> [$b['id'] !== 'top', $b['path']]);
+            return $pages;
         }
         usort($pages, static fn (array $a, array $b): int => [$b['date'] ?? '', $b['id']] <=> [$a['date'] ?? '', $a['id']]);
         return $pages;
@@ -368,8 +532,13 @@ final class Api
 
     // Writes the public page for $pageId, or removes it when nothing is published.
     // Each file is written to a temporary name and renamed, so a reader never sees half a page.
-    private function writeSite(string $pageId, ?string $source): void
+    // A site's page goes to its path when $move (publishing), else where it is now (site.md §3).
+    private function writeSite(string $pageId, ?string $source, bool $move = false): void
     {
+        if ($this->site !== null) {
+            $this->writeSitePage($pageId, $source, $move);
+            return;
+        }
         $file = $this->siteDir . '/' . ($pageId === 'top' ? 'index.html' : "{$pageId}/index.html");
         if ($source === null) {
             if (is_file($file)) {
@@ -393,6 +562,111 @@ final class Api
         }
         self::writeAtomically($this->siteDir . '/style.css', $this->renderer->stylesheet());
         self::writeAtomically($file, $html);
+    }
+
+    /**
+     * The header and footer: whether each is loaded and published, and when its draft was saved.
+     *
+     * @return list<array{id: string, loaded: bool, published: bool, savedAt: int|null}>
+     */
+    private function listParts(): array
+    {
+        $parts = [];
+        foreach ([Site::HEADER, Site::FOOTER] as $id) {
+            $q = $this->db->prepare('SELECT published, draft_saved_at FROM pages WHERE id = ?');
+            $q->execute([$id]);
+            $row = $q->fetch(PDO::FETCH_ASSOC);
+            $parts[] = [
+                'id' => $id,
+                'loaded' => $row !== false,
+                'published' => $row !== false && $row['published'] !== null,
+                'savedAt' => $row !== false && $row['draft_saved_at'] !== null ? (int) $row['draft_saved_at'] : null,
+            ];
+        }
+        return $parts;
+    }
+
+    // The published version of the header or footer, for a page $depth folders down; null when none.
+    private function partOf(string $partId, int $depth): ?Document
+    {
+        try {
+            $source = (new PageStore($this->db, $partId, $this->now))->publishedSource();
+        } catch (PageNotLoaded) {
+            return null;
+        }
+        if ($source === null) {
+            return null;
+        }
+        $doc = $this->format->parse($source);
+        $this->site->relink($doc, $depth);
+        return $doc;
+    }
+
+    // After the header or footer is published or taken back: every page written, again where it is.
+    private function rewriteAll(): void
+    {
+        foreach ($this->db->query("SELECT DISTINCT page FROM site_files WHERE page != '' ORDER BY page")->fetchAll(PDO::FETCH_COLUMN) as $id) {
+            try {
+                $source = (new PageStore($this->db, (string) $id, $this->now))->publishedSource();
+            } catch (PageNotLoaded) {
+                continue;
+            }
+            if ($source !== null) {
+                $this->writeSitePage((string) $id, $source, false);
+            }
+        }
+    }
+
+    private function writeSitePage(string $pageId, ?string $source, bool $move): void
+    {
+        if (Site::isPart($pageId)) {
+            $this->rewriteAll();
+            return;
+        }
+        $live = $this->livePath($pageId);
+        if ($source === null) {
+            if ($live !== null) {
+                $this->removeOwned($live);
+            }
+            return;
+        }
+        $path = $move || $live === null ? $this->pathOf($pageId) : $live;
+        $meta = $this->metaOf($pageId);
+        $title = $meta['title'] ?? (self::TITLES[$pageId] ?? $pageId);
+        $depth = Site::depth($path);
+        try {
+            $doc = $this->format->parse($source);
+            // Addresses from the site's root and the editor's pictures, as seen from this page (site.md §3.1).
+            $this->site->relink($doc, $depth);
+            // Only the published versions of the header and footer go in: never their drafts.
+            $html = $this->renderer->renderPage($doc, $title, 'ja', str_repeat('../', $depth) . 'style.css', false, $this->siteHead($path, $doc, $meta['description'] ?? ''), $this->partOf(Site::HEADER, $depth), $this->partOf(Site::FOOTER, $depth));
+        } catch (SourceError | RenderError $e) {
+            error_log('wge: cannot render ' . $pageId . ': ' . $e->getMessage());
+            return;
+        }
+        if (!$this->writeOwned('style.css', '', $this->renderer->stylesheet()) || !$this->writeOwned($path, $pageId, $html)) {
+            return;
+        }
+        if ($live !== null && $live !== $path) {
+            $this->removeOwned($live);
+        }
+    }
+
+    // As pageHead, for a site's page at $path: its address leaves off a last index.html.
+    private function siteHead(string $path, Node $doc, string $description): array
+    {
+        $head = ['description' => $description];
+        if ($this->siteUrl === null || preg_match('#^https?://[^\s"<>]+$#D', $this->siteUrl) !== 1) {
+            return $head;
+        }
+        $url = rtrim($this->siteUrl, '/') . '/' . Site::addressOf($path);
+        $head += ['url' => $url, 'type' => 'website', 'siteName' => $this->site->name()];
+        $src = self::firstImage($doc);
+        $image = $src === null ? null : self::resolveUrl($url, $src);
+        if ($image !== null) {
+            $head['image'] = $image;
+        }
+        return $head;
     }
 
     // The description, and where the page is seen for sharing (blog.md §5): the address and the

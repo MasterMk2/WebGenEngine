@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createSourceFormat } from '../source/js/source-format.mjs';
-import { cleanTitle, dateLabel, fitWithin, newPostId, PAGE_ID, postTemplate, today } from './posts-core.mjs';
+import { addressOf, cleanPath, cleanTitle, dateLabel, fitWithin, FOOTER, HEADER, isPart, newPostId, PAGE_ID, pageIdFor, partTemplate, postTemplate, today } from './posts-core.mjs';
 
 test('a new post ID is its date and four hex digits, and a valid page ID', () => {
   const id = newPostId('2026-11-23', new Uint8Array([0xa3, 0x0f]));
@@ -45,4 +45,41 @@ test('a photo is drawn with its longer side at most the limit, never enlarged', 
 test('dates are shown in Japanese', () => {
   assert.equal(dateLabel('2026-11-03'), '2026年11月3日');
   assert.equal(dateLabel(null), '');
+});
+
+test("a site's path is made the way the server keeps it, or refused", () => {
+  assert.equal(cleanPath(' /Exhibitors '), 'exhibitors.html');
+  assert.equal(cleanPath('en/'), 'en/index.html');
+  assert.equal(cleanPath(''), 'index.html');
+  assert.equal(cleanPath('en/timetable.html'), 'en/timetable.html');
+  assert.equal(cleanPath('a/b/c/d.html'), 'a/b/c/d.html');
+  for (const bad of ['a/b/c/d/e.html', 'media/x.html', 'blog/', '../x.html', 'a b.html', 'a_b.html', '出展.html', 'a//b.html']) assert.equal(cleanPath(bad), null, bad);
+});
+
+test("a page's address leaves off a last index.html", () => {
+  assert.equal(addressOf('index.html'), '');
+  assert.equal(addressOf('en/index.html'), 'en/');
+  assert.equal(addressOf('exhibitors.html'), 'exhibitors.html');
+  assert.equal(addressOf('myindex.html'), 'myindex.html');
+});
+
+test("a new page's id comes from its path and is never another's", () => {
+  assert.equal(pageIdFor('index.html'), 'top');
+  assert.equal(pageIdFor('en/index.html'), 'en-index');
+  assert.equal(pageIdFor('exhibitors.html', new Set(['exhibitors', 'exhibitors-2'])), 'exhibitors-3');
+  assert.equal(pageIdFor('part-header.html'), 'page-part-header');
+  const long = pageIdFor(`${'a'.repeat(64)}/${'b'.repeat(64)}.html`);
+  assert.match(long, PAGE_ID);
+  assert.ok(!isPart(long) && isPart(HEADER) && isPart(FOOTER));
+});
+
+test("the header's and footer's first sources read back as pages", () => {
+  const schema = JSON.parse(readFileSync(new URL('../source/schema.json', import.meta.url), 'utf8'));
+  const sf = createSourceFormat(schema);
+  for (const id of [HEADER, FOOTER]) {
+    const source = partTemplate(id, '合成の祭 <&>');
+    assert.ok(sf.parse(source));
+    assert.ok(source.includes('合成の祭 &lt;&amp;&gt;'));
+  }
+  assert.ok(partTemplate(HEADER, 'x').includes('<Link href="/">x</Link>'));
 });

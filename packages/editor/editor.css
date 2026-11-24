@@ -245,6 +245,13 @@ body.posts-body { grid-template-rows: auto 1fr; }
 .new-post-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .new-post-row input { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); min-width: 0; }
 #new-title { flex: 1 1 16em; }
+#page-path { width: 14em; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.page-path-note { color: var(--muted); font-size: 12px; }
+.page-path-note[hidden] { display: none; }
+.new-field { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.new-field[hidden] { display: none; }
+#new-path { width: 16em; max-width: 100%; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.post-path { font-size: 13px; overflow-wrap: anywhere; }
 .posts-status { margin: 0; min-height: 1.5em; color: var(--muted); }
 .posts-status.error { color: var(--danger); }
 .post-list { list-style: none; margin: 0; padding: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }

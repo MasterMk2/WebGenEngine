@@ -159,8 +159,10 @@ export function createRenderer(schema, theme, baseCss) {
       .join('');
   }
 
-  function renderPage(doc, { title, lang = 'ja', stylesheetHref = 'style.css', trustRaw = false, head = {} }) {
+  // `header` and `footer` are the site's own parts (site.md §5), written around <main> when given.
+  function renderPage(doc, { title, lang = 'ja', stylesheetHref = 'style.css', trustRaw = false, head = {}, header = null, footer = null }) {
     if (!LANG.test(lang)) throw new RenderError('E_LANG', 'lang', '使えない言語コードです');
+    const part = (tag, cls, d) => (d == null ? [] : [`<${tag} class="${cls}">`, renderFragment(d, '  ', { trustRaw }) + `</${tag}>`]);
     return [
       '<!doctype html>',
       `<html lang="${lang}">`,
@@ -172,8 +174,10 @@ export function createRenderer(schema, theme, baseCss) {
       `<link rel="stylesheet" href="${escapeAttr(stylesheetHref)}">`,
       '</head>',
       '<body>',
+      ...part('header', 'wge-site-header', header),
       '<main class="wge-page">',
       renderFragment(doc, '  ', { trustRaw }) + '</main>',
+      ...part('footer', 'wge-site-footer', footer),
       '</body>',
       '</html>',
       '',
