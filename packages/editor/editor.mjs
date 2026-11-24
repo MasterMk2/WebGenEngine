@@ -55,6 +55,8 @@ const PREVIEW_CSS = `
 .wge-heading, .wge-text, .wge-button { cursor: text; }
 [contenteditable] { outline: none; cursor: text; }
 .wge-text:empty, .wge-heading:empty { min-height: 1.5em; }
+/* Room above the first block for the toolbar of the selected block (placeBlockbar). */
+body { padding-top: 44px; }
 `;
 
 const $ = (id) => document.getElementById(id);
@@ -745,7 +747,9 @@ function renderBlockbar() {
   blockbar.append(handle, crumbs, sep(), up, down, sep(), add, dup, del);
 }
 
-// Above the block when there is room, else just inside its top edge.
+// Above the block when there is room, else below it, so the toolbar never covers what is selected
+// (a title being typed, at the top of the page). Only a block taller than the view, with no room
+// above nor below, gets it just inside its top edge.
 function placeBlockbar(el) {
   if (!el) {
     blockbar.hidden = true;
@@ -760,7 +764,10 @@ function placeBlockbar(el) {
   blockbar.hidden = false;
   const h = blockbar.offsetHeight;
   let top = r.top - h - 6;
-  if (top < 4) top = Math.max(4, r.top + 4);
+  if (top < 4) {
+    const below = r.bottom + 6;
+    top = below + h <= height - 4 ? below : Math.max(4, r.top + 4);
+  }
   top = Math.min(top, height - h - 4);
   const left = Math.max(4, Math.min(r.left, overlay.clientWidth - blockbar.offsetWidth - 4));
   Object.assign(blockbar.style, { left: `${left}px`, top: `${top}px` });
