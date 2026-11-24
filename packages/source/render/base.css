@@ -10,6 +10,9 @@ a:focus-visible { outline: 2px solid var(--wge-color-primary); outline-offset: 2
 .wge-width-normal > * { max-width: min(100%, var(--wge-width-normal)); }
 .wge-width-wide > * { max-width: min(100%, var(--wge-width-wide)); }
 .wge-width-full > * { max-width: 100%; }
+/* A block placed straight in the page, outside any section, keeps a section's side room and column. */
+.wge-page > :not(.wge-section) { max-width: min(100% - 2 * var(--wge-space-md), var(--wge-width-normal)); margin-inline: auto; margin-block: var(--wge-space-md); }
+.wge-page > .wge-button { display: block; width: fit-content; margin-inline-start: max(var(--wge-space-md), (100% - var(--wge-width-normal)) / 2); }
 .wge-bg-none { background: none; }
 .wge-bg-subtle { background: var(--wge-color-subtle); }
 .wge-bg-primary { background: var(--wge-color-primary); color: var(--wge-color-on-primary); }
