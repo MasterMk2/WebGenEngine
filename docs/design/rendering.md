@@ -137,7 +137,7 @@ JS の `renderFragment(doc, indent, { annotate: true })` は、エディタの�
 - `Embed`（`void`）：`src`（型 `embed`）・`title`（必須。読み上げ用）・`ratio`（`16:9`・`4:3`・`1:1`・`3:4`。無ければ 16:9）。`<iframe class="wge-embed …" src title loading="lazy"></iframe>` を書く。`iframe` は HTML で閉じなければならないので、スキーマの `render.close` で終了タグを付ける（JS と PHP）
 - 埋め込める場所はスキーマの `embedSources` だけ：Google マップの埋め込みの URL（`https://www.google.com/maps/embed?`・`https://maps.google.com/maps?`）と、このサイトのページ（`/` で始まる）。接頭辞は大文字小文字も区別する。`\`・`//`・似た名前のホストは断る（`source-format.md` §5）
 - サイトでは、`/` で始まる場所はページの深さから見た相対に直す（site.md §3.1。クエリは残す）
-- エディタのプレビューは前段のアプリのオリジンで動くので、中身を読み込まない。スキーマの `preview: "placeholder"` の部品は、同じ大きさの枠に `title` だけを出す（JS の `annotate` だけ）
+- エディタのプレビューは前段のアプリのオリジンで動くので、中身を読み込まない。スキーマの `preview: "placeholder"` の部品は、同じ大きさの枠に `title` だけを出す（JS の `annotate` だけ）。プレビューの前後に出すヘッダーとフッター（site.md §6）も同じ枠にする（`renderFragment` の `inert`：枠にするが `data-wge-path` は付けない。Html も枠）
 - エディタ：挿入の一覧の「地図・埋め込み」。「埋め込む場所」に、Google マップの「地図を埋め込む」の `<iframe …>` をそのまま貼ると、`src` だけを取り出す（`posts-core.mjs` の `embedSrcFrom`）
 - `sandbox` は付けていない。載せられる場所を限ったため。埋め込んだこのサイトのページ（地図の画面など）が、親のページの表示を移すことがあるため
 - 無作為テストでは、`<iframe>` がすべて閉じていることと、`src` が `embedSources` の規則を満たすことを確かめる

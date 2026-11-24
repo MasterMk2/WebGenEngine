@@ -268,7 +268,8 @@ function render() {
   overlay.classList.remove('editing');
   frameWrap.classList.toggle('stale', Boolean(state.sourceError));
   previewScroll = frame.contentWindow?.scrollY ?? previewScroll;
-  const part = (tag, cls, doc, label) => (doc ? `<${tag} class="${cls}" data-wge-part="${label}">\n${renderer.renderFragment(doc, '  ')}</${tag}>` : '');
+  // Inert: an embed or Html in the header or footer is a frame here, never loaded (rendering.md §7.2).
+  const part = (tag, cls, doc, label) => (doc ? `<${tag} class="${cls}" data-wge-part="${label}">\n${renderer.renderFragment(doc, '  ', { inert: true })}</${tag}>` : '');
   frame.srcdoc = [
     '<!doctype html><html lang="ja"><head><meta charset="utf-8">',
     `<style>${renderer.stylesheet()}${PREVIEW_CSS}</style></head><body>`,
@@ -949,6 +950,8 @@ function watchPreview(d) {
   });
   // The overlay lets the pointer through only while editing, so this sees clicks then.
   d.addEventListener('pointerdown', (e) => {
+    // A click in the preview chooses other words or another block: the link box was for the old ones.
+    closeLinkBox(false);
     const ed = state.editing;
     if (!ed || ed.el.contains(e.target)) return;
     e.preventDefault();

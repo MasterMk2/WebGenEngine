@@ -130,19 +130,21 @@ export function createRenderer(schema, theme, baseCss) {
 
   // Returns null for nodes that are not published (comments).
   // `path` is set only in the editor preview: blocks get data-wge-path, and Html becomes
-  // an inert placeholder so its content never runs inside the editor.
+  // an inert placeholder so its content never runs inside the editor. `inert` is the preview of
+  // what is not edited there (the site's header and footer): the same placeholders, no paths.
   // Otherwise Html content is sanitized unless `trustRaw` says its author may publish raw HTML (§7).
-  function renderNode(node, indent, path, trustRaw) {
+  function renderNode(node, indent, path, trustRaw, inert = false) {
     if (node.type === 'comment') return null;
     const comp = components.get(node.type);
+    const at = path ? ` data-wge-path="${path.join('.')}"` : '';
     if (comp.kind === 'raw') {
-      if (path) return `<div data-wge-path="${path.join('.')}" class="wge-edit-raw">Html</div>`;
+      if (path || inert) return `<div${at} class="wge-edit-raw">Html</div>`;
       return trustRaw ? node.raw : sanitizers.get(node.type)(node.raw);
     }
     // An Embed loads another page: in the editor (on the editor's own origin) it is a frame with its
     // title only, the size it will take, and nothing loaded.
-    if (path && comp.preview === 'placeholder') {
-      return `<div data-wge-path="${path.join('.')}" class="${['wge-edit-raw', ...classesOf(comp, node.props)].join(' ')}">${escapeText(node.props.title ?? comp.name)}</div>`;
+    if ((path || inert) && comp.preview === 'placeholder') {
+      return `<div${at} class="${['wge-edit-raw', ...classesOf(comp, node.props)].join(' ')}">${escapeText(node.props.title ?? comp.name)}</div>`;
     }
     const [tag, open] = openTag(comp, node, path);
     // An element that HTML does not leave open (iframe) still gets its end tag.
@@ -152,7 +154,7 @@ export function createRenderer(schema, theme, baseCss) {
       // add anyway), so the page's elements are the ones written.
       const wrap = comp.render.inner;
       const inner = indent + (wrap ? '    ' : '  ');
-      const kids = node.children.map((c, i) => renderNode(c, inner, path && [...path, i], trustRaw)).filter((s) => s !== null);
+      const kids = node.children.map((c, i) => renderNode(c, inner, path && [...path, i], trustRaw, inert)).filter((s) => s !== null);
       if (wrap) {
         if (kids.length === 0) return `${open}<${wrap}></${wrap}></${tag}>`;
         return `${open}\n${indent}  <${wrap}>` + kids.map((k) => `\n${inner}${k}`).join('') + `\n${indent}  </${wrap}>\n${indent}</${tag}>`;
@@ -163,10 +165,10 @@ export function createRenderer(schema, theme, baseCss) {
     return `${open}${inline(node.children)}</${tag}>`;
   }
 
-  // `annotate` is for the editor preview only; published pages never carry the extra attributes.
-  function renderFragment(doc, indent = '', { annotate = false, trustRaw = false } = {}) {
+  // `annotate` and `inert` are for the editor preview only; published pages never carry them.
+  function renderFragment(doc, indent = '', { annotate = false, trustRaw = false, inert = false } = {}) {
     return doc.children
-      .map((c, i) => renderNode(c, indent, annotate ? [i] : null, trustRaw))
+      .map((c, i) => renderNode(c, indent, annotate ? [i] : null, trustRaw, inert))
       .filter((s) => s !== null)
       .map((s) => `${indent}${s}\n`)
       .join('');
