@@ -74,6 +74,14 @@ export function createSourceFormat(schema) {
   const urlSchemes = new Set(schema.urlSchemes);
   const embedSources = schema.embedSources ?? [];
 
+  // Where a block may stand (source-format.md §4.1): a container may list the children it takes
+  // ("children"), and a component the parents it goes in ("parents"). The page is "document".
+  function placementOk(parentType, comp) {
+    const parent = components.get(parentType);
+    if (parent?.children && !parent.children.includes(comp.name)) return false;
+    return !comp.parents || comp.parents.includes(parentType);
+  }
+
   // An Embed's address starts with one of the listed prefixes; "/" means a page of this site,
   // never "//" (another host). A backslash is refused before this: browsers read it as "/".
   const embedAllowed = (value) => embedSources.some((s) => (s === '/' ? value.startsWith('/') && !value.startsWith('//') : value.startsWith(s)));
@@ -223,7 +231,7 @@ export function createSourceFormat(schema) {
         }
         let node;
         if (startsWith('<!--')) node = parseComment();
-        else if (src[pos] === '<') node = parseElement('block', new Set());
+        else if (src[pos] === '<') node = parseElement('block', new Set(), parent.type);
         else fail('E_TEXT_IN_BLOCK', pos, '文字は Text などの部品の中に書いてください');
         node.leading = leading;
         node.origIndex = index++;
@@ -253,7 +261,8 @@ export function createSourceFormat(schema) {
       }
     }
 
-    function parseElement(context, excluded) {
+    // `parentType` is the type of the block this one stands in (blocks only).
+    function parseElement(context, excluded, parentType) {
       const start = pos;
       pos++;
       if (!NAME_START.test(src[pos] ?? '')) fail('E_UNEXPECTED_CHAR', pos, '< の後には部品の名前を書いてください');
@@ -265,6 +274,7 @@ export function createSourceFormat(schema) {
       }
       const allowed = context === 'block' ? BLOCK_KINDS : INLINE_KINDS;
       if (!allowed.has(comp.kind) || excluded.has(name)) fail('E_NOT_ALLOWED_HERE', start, `<${name}> はここには置けません`);
+      if (context === 'block' && !placementOk(parentType, comp)) fail('E_NOT_ALLOWED_HERE', start, `<${name}> は ${parentType === 'document' ? 'ページの直下' : `<${parentType}> の中`}には置けません`);
 
       const attrs = new Map(comp.attributes.map((a) => [a.name, a]));
       const props = {};
@@ -453,7 +463,8 @@ export function createSourceFormat(schema) {
     return out;
   }
 
-  function fromJSON(json, context, excluded) {
+  // `parentType` is the type of the block a new block goes in (blocks only).
+  function fromJSON(json, context, excluded, parentType) {
     if (json === null || typeof json !== 'object') throw new EditError('E_INVALID_NODE', 'ノードはオブジェクトで渡してください');
     if (json.type === 'comment') {
       if (context !== 'block') throw new EditError('E_COMMENT_IN_INLINE', '文の途中にはコメントを置けません');
@@ -473,6 +484,7 @@ export function createSourceFormat(schema) {
     if (!comp) throw new EditError('E_UNKNOWN_COMPONENT', `${json.type} という部品はありません`);
     const allowed = context === 'block' ? BLOCK_KINDS : INLINE_KINDS;
     if (!allowed.has(comp.kind) || excluded.has(comp.name)) throw new EditError('E_NOT_ALLOWED_HERE', `${comp.name} はここには置けません`);
+    if (context === 'block' && !placementOk(parentType, comp)) throw new EditError('E_NOT_ALLOWED_HERE', `${comp.name} は ${parentType} の中には置けません`);
     const props = json.props ?? {};
     for (const [k, v] of Object.entries(props)) {
       const attr = comp.attributes.find((a) => a.name === k);
@@ -486,7 +498,7 @@ export function createSourceFormat(schema) {
     }
     const node = { type: comp.name, props: orderProps(comp, props) };
     if (comp.kind === 'raw') node.raw = checkRaw(json.raw ?? '');
-    if (comp.kind === 'container') node.children = (json.children ?? []).map((c) => fromJSON(c, 'block', new Set()));
+    if (comp.kind === 'container') node.children = (json.children ?? []).map((c) => fromJSON(c, 'block', new Set(), comp.name));
     if (comp.kind === 'text' || comp.kind === 'inline') node.children = inlineFromJSON(comp, json.children ?? [], excluded);
     return node;
   }
@@ -576,7 +588,7 @@ export function createSourceFormat(schema) {
       const chain = blockParent(doc, parentPath);
       const parent = chain[chain.length - 1];
       if (!Number.isInteger(index) || index < 0 || index > parent.children.length) throw new EditError('E_BAD_PATH', `位置 ${index} には入れられません`);
-      parent.children.splice(index, 0, fromJSON(json, 'block', new Set()));
+      parent.children.splice(index, 0, fromJSON(json, 'block', new Set(), parent.type));
       markAncestors(chain);
     },
     remove(doc, path) {
@@ -598,6 +610,8 @@ export function createSourceFormat(schema) {
         if (toChain.includes(moving)) throw new EditError('E_BAD_PATH', '部品を自分の中には動かせません');
         const to = toChain[toChain.length - 1];
         if (!Number.isInteger(index) || index < 0 || index > to.children.length) throw new EditError('E_BAD_PATH', `位置 ${index} には入れられません`);
+        const movingComp = components.get(moving.type);
+        if (movingComp && !placementOk(to.type, movingComp)) throw new EditError('E_NOT_ALLOWED_HERE', `${moving.type} は ${to.type} の中には置けません`);
         delete moving.leading;
         to.children.splice(index, 0, moving);
       } catch (e) {

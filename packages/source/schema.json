@@ -95,6 +95,37 @@
       "preview": "placeholder"
     },
     {
+      "name": "Table",
+      "kind": "container",
+      "children": ["Row"],
+      "attributes": [],
+      "render": { "tag": "table", "class": "wge-table", "inner": "tbody" }
+    },
+    {
+      "name": "Row",
+      "kind": "container",
+      "parents": ["Table"],
+      "children": ["HeaderCell", "Cell"],
+      "attributes": [],
+      "render": { "tag": "tr" }
+    },
+    {
+      "name": "HeaderCell",
+      "kind": "text",
+      "parents": ["Row"],
+      "attributes": [
+        { "name": "scope", "type": "enum", "values": ["row", "col"] }
+      ],
+      "render": { "tag": "th", "attrs": ["scope"] }
+    },
+    {
+      "name": "Cell",
+      "kind": "text",
+      "parents": ["Row"],
+      "attributes": [],
+      "render": { "tag": "td" }
+    },
+    {
       "name": "Html",
       "kind": "raw",
       "trusted": true,

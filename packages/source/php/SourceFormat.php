@@ -93,6 +93,17 @@ final class SourceFormat
         $this->embedSources = $schema['embedSources'] ?? [];
     }
 
+    // Where a block may stand (source-format.md §4.1): a container may list the children it takes
+    // ("children"), and a component the parents it goes in ("parents"). The page is "document".
+    private function placementOk(string $parentType, array $comp): bool
+    {
+        $parent = $this->components[$parentType] ?? null;
+        if ($parent !== null && isset($parent['children']) && !in_array($comp['name'], $parent['children'], true)) {
+            return false;
+        }
+        return !isset($comp['parents']) || in_array($parentType, $comp['parents'], true);
+    }
+
     // An Embed's address starts with one of the listed prefixes; "/" means a page of this site,
     // never "//" (another host). A backslash is refused before this: browsers read it as "/".
     private function embedAllowed(string $value): bool
@@ -432,7 +443,7 @@ final class SourceFormat
             if ($this->startsWith('<!--')) {
                 $node = $this->parseComment();
             } elseif ($this->ch() === '<') {
-                $node = $this->parseElement('block', []);
+                $node = $this->parseElement('block', [], $parent->type);
             } else {
                 $this->fail('E_TEXT_IN_BLOCK', $this->pos, '文字は Text などの部品の中に書いてください');
             }
@@ -472,7 +483,8 @@ final class SourceFormat
         }
     }
 
-    private function parseElement(string $context, array $excluded): Node
+    // $parentType is the type of the block this one stands in (blocks only).
+    private function parseElement(string $context, array $excluded, ?string $parentType = null): Node
     {
         $start = $this->pos;
         $this->pos++;
@@ -488,6 +500,10 @@ final class SourceFormat
         $allowed = $context === 'block' ? self::BLOCK_KINDS : self::INLINE_KINDS;
         if (!in_array($comp['kind'], $allowed, true) || in_array($name, $excluded, true)) {
             $this->fail('E_NOT_ALLOWED_HERE', $start, "<{$name}> はここには置けません");
+        }
+        if ($context === 'block' && !$this->placementOk((string) $parentType, $comp)) {
+            $where = $parentType === 'document' ? 'ページの直下' : "<{$parentType}> の中";
+            $this->fail('E_NOT_ALLOWED_HERE', $start, "<{$name}> は {$where}には置けません");
         }
 
         $props = [];
@@ -762,7 +778,8 @@ final class SourceFormat
         return $out;
     }
 
-    private function fromJSON(mixed $json, string $context, array $excluded): Node
+    // $parentType is the type of the block a new block goes in (blocks only).
+    private function fromJSON(mixed $json, string $context, array $excluded, ?string $parentType = null): Node
     {
         if (!is_array($json) || !isset($json['type']) || !is_string($json['type'])) {
             throw new EditError('E_INVALID_NODE', 'ノードはオブジェクトで渡してください');
@@ -800,6 +817,9 @@ final class SourceFormat
         if (!in_array($comp['kind'], $allowed, true) || in_array($comp['name'], $excluded, true)) {
             throw new EditError('E_NOT_ALLOWED_HERE', "{$comp['name']} はここには置けません");
         }
+        if ($context === 'block' && !$this->placementOk((string) $parentType, $comp)) {
+            throw new EditError('E_NOT_ALLOWED_HERE', "{$comp['name']} は {$parentType} の中には置けません");
+        }
         $props = $json['props'] ?? [];
         if (!is_array($props)) {
             throw new EditError('E_INVALID_NODE', 'props はオブジェクトで渡してください');
@@ -828,7 +848,7 @@ final class SourceFormat
             $node->raw = self::checkRaw($json['raw'] ?? '');
         }
         if ($comp['kind'] === 'container') {
-            $node->children = array_map(fn ($c) => $this->fromJSON($c, 'block', []), self::listOf($json['children'] ?? []));
+            $node->children = array_map(fn ($c) => $this->fromJSON($c, 'block', [], $comp['name']), self::listOf($json['children'] ?? []));
         }
         if ($comp['kind'] === 'text' || $comp['kind'] === 'inline') {
             $node->children = $this->inlineFromJSON($comp, $json['children'] ?? [], $excluded);
@@ -970,7 +990,7 @@ final class SourceFormat
         $chain = $this->blockParent($doc, $parentPath);
         $parent = $chain[count($chain) - 1];
         self::checkIndex($index, count($parent->children));
-        array_splice($parent->children, $index, 0, [$this->fromJSON($json, 'block', [])]);
+        array_splice($parent->children, $index, 0, [$this->fromJSON($json, 'block', [], $parent->type)]);
         self::markAncestors($chain);
     }
 
@@ -1002,6 +1022,10 @@ final class SourceFormat
             }
             $to = $toChain[count($toChain) - 1];
             self::checkIndex($index, count($to->children));
+            $movingComp = $this->components[$moving->type] ?? null;
+            if ($movingComp !== null && !$this->placementOk($to->type, $movingComp)) {
+                throw new EditError('E_NOT_ALLOWED_HERE', "{$moving->type} は {$to->type} の中には置けません");
+            }
             $moving->leading = null;
             array_splice($to->children, $index, 0, [$moving]);
         } catch (EditError $e) {

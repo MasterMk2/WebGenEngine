@@ -64,5 +64,12 @@
   {"name": "column counts a surrogate pair as one", "source": "<Text>𠮷&x;</Text>", "error": {"code": "E_BAD_ENTITY", "line": 1, "column": 8}},
   {"name": "column after emoji on a later line", "source": "<Stack>\n  <Text>🍣🍣</Text><Foo />\n</Stack>", "error": {"code": "E_UNKNOWN_COMPONENT", "line": 2, "column": 18}},
   {"name": "CRLF counts as one line break", "source": "<Stack>\r\n  <Foo />\r\n</Stack>", "error": {"code": "E_UNKNOWN_COMPONENT", "line": 2, "column": 3}},
-  {"name": "BOM does not shift the column", "source": "﻿<Foo />", "error": {"code": "E_UNKNOWN_COMPONENT", "line": 1, "column": 1}}
+  {"name": "BOM does not shift the column", "source": "﻿<Foo />", "error": {"code": "E_UNKNOWN_COMPONENT", "line": 1, "column": 1}},
+  {"name": "table: a row outside a table", "source": "<Row />", "error": {"code": "E_NOT_ALLOWED_HERE", "line": 1, "column": 1}},
+  {"name": "table: a cell in a stack", "source": "<Stack>\n  <Cell>x</Cell>\n</Stack>", "error": {"code": "E_NOT_ALLOWED_HERE", "line": 2, "column": 3}},
+  {"name": "table: a paragraph straight in a table", "source": "<Table>\n  <Text>x</Text>\n</Table>", "error": {"code": "E_NOT_ALLOWED_HERE", "line": 2, "column": 3}},
+  {"name": "table: a paragraph in a row", "source": "<Table>\n  <Row>\n    <Text>x</Text>\n  </Row>\n</Table>", "error": {"code": "E_NOT_ALLOWED_HERE", "line": 3, "column": 5}},
+  {"name": "table: a row in a row", "source": "<Table>\n  <Row>\n    <Row />\n  </Row>\n</Table>", "error": {"code": "E_NOT_ALLOWED_HERE", "line": 3, "column": 5}},
+  {"name": "table: a cell straight in a table", "source": "<Table><Cell>x</Cell></Table>", "error": {"code": "E_NOT_ALLOWED_HERE", "line": 1, "column": 8}},
+  {"name": "table: an unknown scope", "source": "<Table><Row><HeaderCell scope=\"all\">x</HeaderCell></Row></Table>", "error": {"code": "E_INVALID_VALUE", "line": 1, "column": 31}}
 ]
