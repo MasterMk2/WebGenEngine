@@ -4,6 +4,20 @@ import { readFileSync } from 'node:fs';
 import { createSourceFormat } from '../source/js/source-format.mjs';
 import { addressOf, cleanPath, cleanTitle, dateLabel, embedSrcFrom, fitWithin, FOOTER, HEADER, isPart, newPostId, PAGE_ID, pageHref, pageIdFor, partTemplate, postTemplate, today } from './posts-core.mjs';
 
+test('the inert preview (the site\'s header and footer) draws an embed and Html as frames, with no paths', async () => {
+  const { createRenderer } = await import('../source/js/render.mjs');
+  const schema = JSON.parse(readFileSync(new URL('../source/schema.json', import.meta.url), 'utf8'));
+  const sf = createSourceFormat(schema);
+  const theme = JSON.parse(readFileSync(new URL('../source/theme.default.json', import.meta.url), 'utf8'));
+  const r = createRenderer(schema, theme, '');
+  const doc = sf.parse('<Stack>\n  <Embed src="/map/viewer.html" title="合成の地図" />\n  <Html><p>x</p></Html>\n  <Text>合成</Text>\n</Stack>\n');
+  const inert = r.renderFragment(doc, '', { inert: true });
+  assert.ok(!inert.includes('<iframe') && !inert.includes('data-wge-path'), inert);
+  assert.match(inert, /<div class="wge-edit-raw wge-embed">合成の地図<\/div>/);
+  assert.match(inert, /<div class="wge-edit-raw">Html<\/div>/);
+  assert.ok(r.renderFragment(doc, '').includes('<iframe class="wge-embed" src="/map/viewer.html"'), 'published pages are unchanged');
+});
+
 test("a link to a page of the site is written from the site's root, without a last index.html", () => {
   assert.equal(pageHref('index.html'), '/');
   assert.equal(pageHref('en/index.html'), '/en/');
