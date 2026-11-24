@@ -12,6 +12,9 @@
 //                     are made from the published posts (docs/design/blog.md)
 //   WGE_SITE_NAME     when set, the site is pages written where their paths say, with a header and
 //                     footer shared by them all (docs/design/site.md). Not with WGE_BLOG_TITLE yet
+// A theme of the site's own goes in WGE_DATA/theme.json (docs/design/rendering.md §4); without
+// it the default theme is used. After a new theme or a new version of WGE, write the published
+// pages again with the same settings: php packages/server/trusted-front.php --rebuild
 // Without a usable key and client ID nothing is served: it never falls back to router.php's
 // open behaviour.
 
@@ -33,12 +36,18 @@ use WebGenEngine\Server\Front;
 use WebGenEngine\Server\PageStore;
 use WebGenEngine\Server\Site;
 use WebGenEngine\Server\SvcAuth;
+use WebGenEngine\Source\RenderError;
 use WebGenEngine\Source\Renderer;
 use WebGenEngine\Source\SourceFormat;
 
 header_remove('X-Powered-By');
 
-$refuse = static function (string $why): bool {
+$rebuild = PHP_SAPI === 'cli' && in_array('--rebuild', $argv ?? [], true);
+$refuse = static function (string $why) use ($rebuild): bool {
+    if ($rebuild) {
+        fwrite(STDERR, 'wge: ' . $why . "\n");
+        exit(1);
+    }
     error_log('wge: ' . $why . '; nothing is served');
     http_response_code(503);
     header('Content-Type: text/plain; charset=utf-8');
@@ -71,7 +80,18 @@ $db = PageStore::openDatabase('sqlite:' . $data . '/wge.sqlite');
 $db->exec('PRAGMA busy_timeout = 5000');
 
 $format = SourceFormat::fromSchemaFile($packages . '/source/schema.json');
-$renderer = Renderer::fromFiles($packages . '/source');
+$theme = null;
+if (is_file($data . '/theme.json')) {
+    $theme = json_decode((string) file_get_contents($data . '/theme.json'), true);
+    if (!is_array($theme)) {
+        return $refuse('theme.json is not a JSON object');
+    }
+}
+try {
+    $renderer = Renderer::fromFiles($packages . '/source', $theme);
+} catch (RenderError $e) {
+    return $refuse('theme.json: ' . $e->getMessage());
+}
 $blogTitle = trim((string) getenv('WGE_BLOG_TITLE'));
 if ($blogTitle !== '' && (mb_strlen($blogTitle) > 120 || preg_match('/[\x00-\x1f\x7f]/', $blogTitle) === 1)) {
     return $refuse('WGE_BLOG_TITLE must be one line of 120 characters or fewer');
@@ -85,13 +105,20 @@ if ($siteName !== '' && $blog !== null) {
     return $refuse('WGE_SITE_NAME and WGE_BLOG_TITLE cannot be used together yet (docs/design/site.md §2)');
 }
 $sitePages = $siteName === '' ? null : new Site($siteName, json_decode((string) file_get_contents($packages . '/source/schema.json'), true, 512, JSON_THROW_ON_ERROR));
+$api = new Api($db, $site, $format, $renderer, siteUrl: $siteUrl, blog: $blog, site: $sitePages);
+if ($rebuild) {
+    $ids = $api->rebuildSite();
+    fwrite(STDOUT, 'wge: wrote ' . count($ids) . " published pages again, with the contents page and style.css\n");
+    exit(0);
+}
 $front = new Front(
     new SvcAuth($key, $client, $db),
-    new Api($db, $site, $format, $renderer, siteUrl: $siteUrl, blog: $blog, site: $sitePages),
+    $api,
     $packages,
     $site,
     $data . '/audit.jsonl',
     copySamples: $blog === null && $sitePages === null,
+    theme: $theme,
 );
 $headers = array_change_key_case(function_exists('getallheaders') ? getallheaders() : [], CASE_LOWER);
 [$status, $replyHeaders, $out] = $front->handle($_SERVER['REQUEST_METHOD'] ?? 'GET', $_SERVER['REQUEST_URI'] ?? '/', (string) file_get_contents('php://input'), $headers);

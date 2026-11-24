@@ -140,6 +140,8 @@ WGE にまだログインがない間も、利用者のログインと権限を�
 | `WGE_SITE_DIR` | 公開で書き出す先（既定 `/site`）。別のオリジンの静的配信がここを配る |
 | `WGE_SITE_URL` | 公開サイトの URL。エディタの「サイトを見る」がここを開く（`/api/ping` の `siteUrl`） |
 
+テーマは環境変数でなく `WGE_DATA/theme.json` に置く（rendering.md §4。2026-11-24）。テーマや WGE の版を変えたら、同じ環境変数で `php packages/server/trusted-front.php --rebuild` を流し、公開中のページを書き直す（blog.md §7）。
+
 鍵かクライアント ID が無い・読めないときは、何も配らずに 503 を返す。`router.php` の開いた動きに落ちることはない。
 
 ### 6.3 決めたこと
