@@ -83,7 +83,7 @@ a:focus-visible { outline: 2px solid var(--wge-color-primary); outline-offset: 2
 /* :where() has no weight, so a section's width above still limits a picture placed in it. */
 .wge-image { display: block; height: auto; }
 :where(.wge-image) { max-width: 100%; }
-.wge-ratio-auto { width: auto; }
+.wge-ratio-auto { object-fit: fill; }
 .wge-ratio-1-1 { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; }
 .wge-ratio-4-3 { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
 .wge-ratio-16-9 { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
