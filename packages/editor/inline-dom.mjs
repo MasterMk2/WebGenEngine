@@ -1,13 +1,14 @@
 // Reads the children of an element edited in place (contenteditable) back into the
 // inline nodes of the source format. The browser adds markup of its own while editing
 // (<b>, <span style>, a trailing <br>), so the DOM is never trusted: only the tags the
-// renderer writes for Strong, Em, Link and Br are kept, and everything else is unwrapped
+// renderer writes for Strong, Em, Small, Link and Br are kept, and everything else is unwrapped
 // to its text. Uses only nodeType, nodeName, childNodes and getAttribute, so it runs on
 // the preview's DOM and on plain objects in the tests. Spec: docs/design/editor-ux.md §3.2.
+// Every inline component of the schema must be here, or editing its text in place loses it.
 
 const TEXT_NODE = 3;
 const ELEMENT_NODE = 1;
-const WRAPPERS = { STRONG: 'Strong', B: 'Strong', EM: 'Em', I: 'Em' };
+const WRAPPERS = { STRONG: 'Strong', B: 'Strong', EM: 'Em', I: 'Em', SMALL: 'Small' };
 
 export function inlineFromDom(el) {
   const list = convert(el.childNodes);

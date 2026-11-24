@@ -46,6 +46,22 @@ test('drops the trailing <br>, empty wrappers and no-break spaces', () => {
   assert.deepEqual(inlineFromDom(el('P', [t('a'), el('BR'), t('b')])).map((n) => n.type), ['text', 'Br', 'text']);
 });
 
+test('keeps a small note, and every inline component of the schema has a tag kept here', () => {
+  const p = el('P', [t('会場'), el('SMALL', [t('（'), el('A', [t('地図')], { href: '/map' }), t('）')])]);
+  assert.deepEqual(inlineFromDom(p), [
+    { type: 'text', value: '会場' },
+    { type: 'Small', props: {}, children: [{ type: 'text', value: '（' }, { type: 'Link', props: { href: '/map' }, children: [{ type: 'text', value: '地図' }] }, { type: 'text', value: '）' }] },
+  ]);
+  // Editing a text in place reads it back from the DOM: an inline component missing here would be lost.
+  const schema = JSON.parse(readFileSync(new URL('../source/schema.json', import.meta.url), 'utf8'));
+  for (const c of schema.components.filter((c) => c.kind === 'inline' || c.kind === 'inline-void')) {
+    const tag = c.render.tag.toUpperCase();
+    const node = el(tag, c.kind === 'inline' ? [t('x')] : [], { href: '/x' });
+    const read = inlineFromDom(el('P', [t('a'), node, t('b')]));
+    assert.equal(read[1]?.type, c.name, `${c.name} (<${c.render.tag}>) is read back`);
+  }
+});
+
 test('the result goes through setInline and changes only that line', () => {
   const sf = createSourceFormat(JSON.parse(readFileSync(new URL('../source/schema.json', import.meta.url), 'utf8')));
   const source = '<Section>\n    <Text>前の文</Text>\n    <Text>そのまま</Text>\n</Section>\n';

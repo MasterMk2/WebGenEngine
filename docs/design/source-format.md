@@ -54,7 +54,7 @@ sh php/run-docker.sh php:8.3-apache php:8.5-cli-alpine
 | `text` | Heading、Text、Button | 文（文字とインラインの部品） |
 | `void` | Image | なし。必ず `/>` で閉じる（`E_VOID_NOT_SELF_CLOSED`） |
 | `raw` | Html | `</Html>` までの文字をそのまま持つ。中身は解釈しない（R4 の「GUI では中身を編集しない箱」）。スキーマで `trusted` を付けてあり、将来は管理者だけが書けるようにする（§3.4） |
-| `inline` | Link、Strong、Em | 文 |
+| `inline` | Link、Strong、Em、Small | 文 |
 | `inline-void` | Br | なし |
 
 - ページの最上位は `container` と同じ規則で、ブロックの部品を並べる

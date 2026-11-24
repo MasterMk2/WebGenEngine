@@ -28,9 +28,10 @@
         { "name": "align", "type": "enum", "values": ["start", "center", "end", "stretch"] },
         { "name": "justify", "type": "enum", "values": ["start", "center", "end", "between"] },
         { "name": "gap", "type": "space" },
-        { "name": "wrap", "type": "enum", "values": ["true", "false"] }
+        { "name": "wrap", "type": "enum", "values": ["true", "false"] },
+        { "name": "surface", "type": "enum", "values": ["none", "card", "notice"] }
       ],
-      "render": { "tag": "div", "class": "wge-stack", "classes": ["direction", "align", "justify", "gap", "wrap"] }
+      "render": { "tag": "div", "class": "wge-stack", "classes": ["direction", "align", "justify", "gap", "wrap", "surface"] }
     },
     {
       "name": "Grid",
@@ -113,6 +114,7 @@
     },
     { "name": "Strong", "kind": "inline", "attributes": [], "render": { "tag": "strong" } },
     { "name": "Em", "kind": "inline", "attributes": [], "render": { "tag": "em" } },
+    { "name": "Small", "kind": "inline", "attributes": [], "render": { "tag": "small" } },
     { "name": "Br", "kind": "inline-void", "attributes": [], "render": { "tag": "br" } }
   ]
 }
