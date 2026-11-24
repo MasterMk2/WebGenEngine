@@ -359,6 +359,7 @@ $themedApi = new Api($blogDb, $site, $format, $themed, siteUrl: 'https://site.ex
 $beforeDraft = $blogDb->query("SELECT draft_source, draft_revision FROM pages WHERE id = '20261123-a1b2'")->fetch(PDO::FETCH_ASSOC);
 $rebuilt = $themedApi->rebuildSite();
 check($rebuilt === ['20261123-a1b2', '20261101-c3d4'], 'a rebuild writes the published posts again: ' . json_encode($rebuilt));
+check(!is_file($site . '/sitemap.xml'), 'a blog alone writes no sitemap (its pages are as before)');
 check(str_contains((string) @file_get_contents($site . '/style.css'), '--wge-color-primary: #1b5e20;') && str_contains((string) @file_get_contents($site . '/20261101-c3d4/index.html'), 'wge-post-head'), 'a rebuild writes style.css from the new theme and brings back a missing post');
 check($blogDb->query("SELECT draft_source, draft_revision FROM pages WHERE id = '20261123-a1b2'")->fetch(PDO::FETCH_ASSOC) === $beforeDraft && str_contains((string) @file_get_contents($site . '/index.html'), 'wge-posts-thumb'), 'a rebuild changes no draft, and the contents page keeps its pictures');
 [$status, $body] = $bpost('/api/pages/20261123-a1b2/meta', ['title' => '合成の記事 <b>&"', 'date' => '2026-11-23']);
@@ -530,6 +531,25 @@ mkdir($siteDir);
 $siteDb = PageStore::openDatabase('sqlite::memory:');
 $siteApi = new Api($siteDb, $siteDir, $format, $renderer, siteUrl: 'https://fest.example/', site: new Site('合成の祭', $schema));
 $spost = static fn (string $path, array $body) => $siteApi->handle('POST', $path, json_encode($body), $json);
+// Another site: a sitemap.xml it did not write, then none and no site URL.
+$mapDir = sys_get_temp_dir() . '/wge-test-map-' . bin2hex(random_bytes(4));
+mkdir($mapDir);
+file_put_contents($mapDir . '/sitemap.xml', 'not written by WGE');
+$mapApi = new Api(PageStore::openDatabase('sqlite::memory:'), $mapDir, $format, $renderer, siteUrl: 'https://fest.example/', site: new Site('合成の祭', $schema));
+$mapApi->handle('POST', '/api/pages/top/load', json_encode(['initialSource' => "<Text>合成</Text>\n", 'meta' => ['title' => '合成', 'path' => 'index.html']]), $json);
+[$status] = $mapApi->handle('POST', '/api/pages/top/publish', json_encode(['revision' => 0]), $json);
+check($status === 200 && is_file($mapDir . '/index.html') && file_get_contents($mapDir . '/sitemap.xml') === 'not written by WGE', 'a sitemap.xml WGE did not write stays, and does not stop a publish');
+[, $mapBody] = $mapApi->handle('GET', '/api/pages/top/versions', '', []);
+$mapApi->handle('POST', '/api/pages/top/undo-publish', json_encode(['versionId' => $mapBody['versions'][0]['id']]), $json);
+check(file_get_contents($mapDir . '/sitemap.xml') === 'not written by WGE', 'nor when nothing is published');
+removeTree($mapDir);
+$bareDir = sys_get_temp_dir() . '/wge-test-bare-' . bin2hex(random_bytes(4));
+mkdir($bareDir);
+$bareApi = new Api(PageStore::openDatabase('sqlite::memory:'), $bareDir, $format, $renderer, site: new Site('合成の祭', $schema));
+$bareApi->handle('POST', '/api/pages/top/load', json_encode(['initialSource' => "<Text>合成</Text>\n", 'meta' => ['title' => '合成', 'path' => 'index.html']]), $json);
+[$status] = $bareApi->handle('POST', '/api/pages/top/publish', json_encode(['revision' => 0]), $json);
+check($status === 200 && is_file($bareDir . '/index.html') && !is_file($bareDir . '/sitemap.xml'), 'without a site URL there is no sitemap');
+removeTree($bareDir);
 $sread = static fn (string $path): string => (string) @file_get_contents($siteDir . '/' . $path);
 $links = "<Section>\n  <Heading level=\"1\">合成の祭</Heading>\n  <Text><Link href=\"/exhibitors.html\">出展</Link>・<Link href=\"/\">トップ</Link>・<Link href=\"/#access\">アクセス</Link>・<Link href=\"https://other.example/a\">よそ</Link>・<Link href=\"//cdn.example/x\">cdn</Link>・<Link href=\"notes.html\">相対</Link></Text>\n  <Image src=\"../media/0123456789abcdef.png\" alt=\"会場\" />\n  <Button href=\"/en/\">English</Button>\n</Section>\n";
 
@@ -573,6 +593,11 @@ check(str_contains($top, '<meta property="og:site_name" content="合成の祭">'
 [, $body] = $siteApi->handle('GET', '/api/pages', '', []);
 check(array_column($body['pages'], 'id') === ['top', 'deep', 'en-top'] && array_column($body['pages'], 'livePath', 'id') === ['top' => 'index.html', 'deep' => 'a/b/deep.html', 'en-top' => 'en/index.html'], 'the list has the top page first, then by path, with where each is written');
 
+// The site's map for search engines (site.md §4.1): the published pages at their addresses, the first page first.
+$sitemap = static fn (array $urls): string => "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n" . implode('', array_map(static fn (string $u): string => "  <url><loc>{$u}</loc></url>\n", $urls)) . "</urlset>\n";
+check($sread('sitemap.xml') === $sitemap(['https://fest.example/', 'https://fest.example/a/b/deep.html', 'https://fest.example/en/']), 'the sitemap lists the published pages at their addresses: ' . $sread('sitemap.xml'));
+check($siteDb->query("SELECT page FROM site_files WHERE path = 'sitemap.xml'")->fetchColumn() === '', 'the sitemap is in the list of files WGE wrote, as no page\'s');
+
 // The list of files WGE wrote (site.md §4).
 file_put_contents($siteDir . '/exhibitors.html', 'not written by WGE');
 mkdir($siteDir . '/css');
@@ -606,6 +631,7 @@ $enRow = array_values(array_filter($body['pages'], static fn (array $p) => $p['i
 check($enRow['path'] === 'en/top.html' && $enRow['livePath'] === 'en/index.html', 'the list tells the next path from the one written now');
 [$status] = $spost('/api/pages/en-top/publish', ['revision' => 0]);
 check($status === 200 && is_file($siteDir . '/en/top.html') && !is_file($siteDir . '/en/index.html'), 'publishing moves the page, removing its old file');
+check(str_contains($sread('sitemap.xml'), '<loc>https://fest.example/en/top.html</loc>') && !str_contains($sread('sitemap.xml'), '<loc>https://fest.example/en/</loc>'), 'the sitemap follows the move');
 [$status, $body] = $spost('/api/pages/top/meta', ['title' => 't', 'path' => 'en/top.html']);
 check($status === 409 && $body['reason'] === 'path-taken', 'a path in use is refused when changed');
 
@@ -616,6 +642,7 @@ $liveIn = static function (string $id) use ($siteApi): int {
 };
 [$status] = $spost('/api/pages/deep/undo-publish', ['versionId' => $liveIn('deep')]);
 check($status === 200 && !is_file($siteDir . '/a/b/deep.html') && !is_dir($siteDir . '/a'), 'taking the only publish back removes the file and its empty folders');
+check(!str_contains($sread('sitemap.xml'), 'deep.html') && str_contains($sread('sitemap.xml'), '<loc>https://fest.example/</loc>'), 'a page taken back leaves the sitemap');
 check($sread('exhibitors.html') === 'not written by WGE' && $sread('css/style.css') === 'not written by WGE' && is_dir($siteDir . '/x'), 'files and folders WGE did not write stay');
 [, $body] = $siteApi->handle('GET', '/api/pages', '', []);
 check(array_column($body['pages'], 'livePath', 'id')['deep'] === null, 'a page taken back is written nowhere');
