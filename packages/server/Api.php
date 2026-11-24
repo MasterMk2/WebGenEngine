@@ -27,6 +27,9 @@ final class Api
     /** An image's or a PDF's bytes at most; the editor makes photos smaller before it sends them.
      *  As base64 in JSON this is about 3.4 MB, so it passes a relay in front that allows 4 MB. */
     public const MAX_IMAGE = 2_500_000;
+
+    /** A site's map for search engines, at the site's root (site.md §4.1). */
+    private const SITEMAP = 'sitemap.xml';
     private const TITLES = ['top' => 'トップページ'];
 
     public function __construct(
@@ -556,6 +559,7 @@ final class Api
     {
         if ($this->site !== null) {
             $this->writeSitePage($pageId, $source, $move);
+            $this->writeSitemap();
             return;
         }
         $file = $this->siteDir . '/' . ($pageId === 'top' ? 'index.html' : "{$pageId}/index.html");
@@ -677,6 +681,30 @@ final class Api
         }
     }
 
+    // The site's map for search engines (site.md §4.1): every page WGE has written, at the address
+    // it is seen from WGE_SITE_URL, the first page first. The ledger is the list of what is published
+    // where. Without a site URL there are no addresses to write, so nothing is; a sitemap.xml WGE did
+    // not write is left alone (writeOwned); with no page published, the one WGE wrote goes.
+    private function writeSitemap(): void
+    {
+        if ($this->siteUrl === null || preg_match('#^https?://[^\s"<>]+$#D', $this->siteUrl) !== 1) {
+            return;
+        }
+        $paths = $this->db->query("SELECT path FROM site_files WHERE page != '' ORDER BY path")->fetchAll(PDO::FETCH_COLUMN);
+        $paths = array_values(array_filter(array_map('strval', $paths), static fn (string $p): bool => str_ends_with($p, '.html')));
+        usort($paths, static fn (string $a, string $b): int => [$a !== 'index.html', $a] <=> [$b !== 'index.html', $b]);
+        if ($paths === []) {
+            $this->removeOwned(self::SITEMAP);
+            return;
+        }
+        $xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n";
+        foreach ($paths as $path) {
+            $url = rtrim($this->siteUrl, '/') . '/' . Site::addressOf($path);
+            $xml .= '  <url><loc>' . htmlspecialchars($url, ENT_XML1 | ENT_QUOTES, 'UTF-8') . "</loc></url>\n";
+        }
+        $this->writeOwned(self::SITEMAP, '', $xml . "</urlset>\n");
+    }
+
     // As pageHead, for a site's page at $path: its address leaves off a last index.html.
     private function siteHead(string $path, Node $doc, string $description): array
     {
@@ -791,6 +819,7 @@ final class Api
         // the ledger are touched, site.md §4).
         if ($this->site !== null) {
             $this->rewriteAll();
+            $this->writeSitemap();
             return array_map('strval', $this->db->query("SELECT DISTINCT page FROM site_files WHERE page != '' ORDER BY page")->fetchAll(PDO::FETCH_COLUMN));
         }
         $ids = array_column($this->listPages(true), 'id');
