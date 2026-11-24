@@ -254,15 +254,13 @@ body.posts-body { grid-template-rows: auto 1fr; }
 .post-list a { color: var(--accent); font-weight: 600; overflow-wrap: anywhere; }
 .post-meta { color: var(--muted); font-size: 13px; }
 .post-list li.live .post-meta { color: var(--ok); }
-.post-side { display: inline-flex; align-items: center; gap: 12px; }
-.row-action { font: inherit; font-size: 13px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--muted); cursor: pointer; }
-.row-action:hover, .row-action:focus-visible { color: var(--danger); border-color: currentColor; }
-.trash .row-action:hover, .trash .row-action:focus-visible { color: var(--accent); }
-.link-button { font: inherit; padding: 0; border: 0; background: none; color: var(--accent); text-decoration: underline; cursor: pointer; }
-.trash summary { cursor: pointer; color: var(--muted); }
-.trash-note { color: var(--muted); font-size: 13px; margin: 8px 0; }
-.trash-name { overflow-wrap: anywhere; }
+.post-side { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.post-list button { min-height: 28px; }
+.post-title { font-weight: 600; overflow-wrap: anywhere; }
+.posts-hint { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
 .trash[hidden] { display: none; }
+.trash summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.trash .post-list { margin-top: 8px; }
 
 @media (max-width: 900px) {
   .workspace { grid-template-columns: 1fr; grid-template-rows: 60vh auto; }

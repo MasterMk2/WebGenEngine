@@ -29,10 +29,11 @@
   <section aria-labelledby="list-title">
     <h2 id="list-title">記事</h2>
     <ul class="post-list" id="post-list"></ul>
+    <p class="posts-hint">下書きの記事は「削除」で一覧から外せます。公開中の記事は、エディタで公開を取り消してから削除します。</p>
   </section>
   <details class="trash" id="trash" hidden>
-    <summary id="trash-title">ゴミ箱</summary>
-    <p class="trash-note">ゴミ箱の記事はサイトに出ません。戻すと下書きとして一覧に戻ります。</p>
+    <summary>削除した記事（<span id="trash-count">0</span> 件）</summary>
+    <p class="posts-hint">元に戻すと、下書きとして一覧に戻ります。</p>
     <ul class="post-list" id="trash-list"></ul>
   </details>
 </main>

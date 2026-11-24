@@ -1219,10 +1219,10 @@ async function saveDraft() {
     showSaveState('blocked');
     status(serverMessage(res, '保存する権限がありません。書いた内容はこの画面に残っています'), 'error');
   } else if (res.reason === 'deleted') {
-    // Moved to the trash from another tab: saving again would be refused too.
-    saving.failed = 'deleted';
+    // Deleted from the list of posts meanwhile: saves are refused until it is restored there.
+    saving.failed = 'refused';
     showSaveState('blocked');
-    status('この記事は別の画面でゴミ箱に移されたため、保存できません。記事の一覧のゴミ箱から戻してください。書いた内容はこの画面に残っています', 'error');
+    status(`${DELETED_HELP}書いた内容はこの画面に残っていますが、保存されていません。`, 'error');
   } else {
     saving.failed = res.reason ?? 'unknown';
     showSaveState('failed');
@@ -1361,6 +1361,7 @@ function uploadControl(path) {
 
 // Shown when an answer did not come from the API (requirements §3.3: a WAF on rental servers).
 const WAF_HELP = 'サーバーの防御機能（WAF）が保存を止めた可能性があります。サーバーの管理画面で、この管理画面の場所を WAF の対象から外してください。書いた内容はこの画面に残っています。';
+const DELETED_HELP = 'この記事は削除されています。記事の一覧の「削除した記事」から元に戻すと、また開いて保存できます。';
 
 function showConflict() {
   showSaveState('conflict');
@@ -1607,8 +1608,8 @@ if (ping?.wge === 1) {
     serverMode = true;
   } catch (e) {
     if (e.reason === 'deleted') {
-      // In the trash (blog.md §5): never fall back to this browser's copy of it.
-      status('この記事はゴミ箱にあります。記事の一覧のゴミ箱から戻すと、また直せます', 'error');
+      // Never fall back to this browser's copy: what is written there would not reach the post.
+      status(DELETED_HELP, 'error');
       $('posts-link').hidden = false;
       $('page-name').hidden = true;
       // Nothing is loaded, so nothing here may act: only the way back to the list stays.
