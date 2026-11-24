@@ -427,6 +427,13 @@ foreach (['<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></sv
 check($status === 413 && $body['reason'] === 'too-large', 'an image over the limit is refused');
 [$status] = $bpost('/api/media', ['data' => '***']);
 check($status === 400, 'data that is not base64 is a bad request');
+// A PNG whose header says 640×360 (a header only, made here; no real photo).
+$ihdr = 'IHDR' . pack('NNCCCCC', 640, 360, 8, 2, 0, 0, 0);
+$sized = "\x89PNG\r\n\x1A\n" . pack('N', 13) . $ihdr . pack('N', crc32($ihdr));
+[$status, $body] = $bpost('/api/media', ['data' => base64_encode($sized)]);
+check($status === 200 && ($body['width'] ?? null) === 640 && ($body['height'] ?? null) === 360, 'a saved image comes back with its width and height');
+[, $body] = $bpost('/api/media', ['data' => base64_encode($png)]);
+check(!array_key_exists('width', $body) && !array_key_exists('height', $body), 'an image whose size cannot be read comes back without one');
 check(Api::imageType('RIFF' . "\0\0\0\0" . 'WEBPVP8 ') === 'webp' && Api::imageType("GIF89a\0") === 'gif' && Api::imageType("\xFF\xD8\xFF\xE0") === 'jpg', 'WebP, GIF and JPEG are told by their bytes');
 
 $mediaFront = new Front(new SvcAuth($key, 'front-app', $blogDb, static function () use (&$clock): int {

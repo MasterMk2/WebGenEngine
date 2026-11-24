@@ -26,7 +26,7 @@
 | `GET /api/pages` | — | 200。`pages`（id・title・date・published・savedAt。日付の新しい順） | — |
 | `POST /api/pages/{id}/load` | `initialSource`、`meta`（任意。`title`・`date`） | 200。`meta` も返す | 422（`invalid-title`・`invalid-date`） |
 | `POST /api/pages/{id}/meta` | `title`、`date`、`description`（任意。無ければ今のまま） | 200 | 404（読み込まれていない）、422（`invalid-title`・`invalid-date`・`invalid-description`） |
-| `POST /api/media` | `data`（base64） | 200。`src` | 413 `too-large`、415 `not-image`、400 |
+| `POST /api/media` | `data`（base64） | 200。`src`、読めれば `width`・`height` | 413 `too-large`、415 `not-image`、400 |
 | `GET /api/ping` | — | ブログなら `blog: true`・`blogTitle` も返す | — |
 | `POST /api/pages/{id}/delete` | `{}` | 200。`wasPublished` | 404（`not-loaded`・`deleted`）、422 `protected`（ブログでない `top`） |
 | `POST /api/pages/{id}/restore` | `{}` | 200 | 409 `not-deleted` |
@@ -62,3 +62,11 @@
 - フィードの各記事に、説明文があれば `<description>` を付ける
 - 記事の一覧の API（`GET /api/pages`）も `description` を返す
 - テスト（`test.php` part 5）：説明文の検査（改行・301 文字・文字列でない値）、前後の空白、題名だけの変更で説明文が残ること、記事と目次の `<head>`、最初の画像の絶対 URL、フィード、一覧、URL の解決 8 通り、前の版のデータベースへの列の追加。書き出し器の共通テストデータに `head` の 10 件（JS・PHP）
+
+## 7. 画像の幅と高さ（2026-11-24）
+
+- 画像の部品に任意の `width` `height`（1〜20000 の整数）を足した（schema.json）。書き出しでは `<img>` の `width` `height` になる。画像が読み込まれる前からその縦横比で場所を取るので、読み込みで下の文が動かない（CLS）
+- `POST /api/media` は、画像の先頭（ヘッダー）から読んだ幅と高さを返す。読めない画像は寸法なしで保存する。エディタは画像を選ぶと `src` と一緒に寸法を入れ、寸法が返らなければ前の画像の寸法を消す
+- 既存の記事の画像には寸法がない。そのままでも表示は変わらない
+- `ratio="auto"` のクラスは `aspect-ratio: auto` から `width: auto` に変えた。`aspect-ratio: auto` は、ブラウザが `width` `height` から作る縦横比を打ち消してしまうため（共通テストデータの `default.css` も同じに直した）。`1:1` などの指定は、これまでどおり切り抜いて表示する
+- 無作為テストの R4 の検査で許す属性に `width` `height` を足した。種 7・11・23 で各 2 万件、PHP 8.3 と 8.5 で食い違い 0 件、不変条件の違反 0 件（種 7 の出力に寸法付きの `<img>` が 1,145 件）

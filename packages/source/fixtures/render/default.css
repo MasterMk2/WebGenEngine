@@ -81,7 +81,7 @@ a:focus-visible { outline: 2px solid var(--wge-color-primary); outline-offset: 2
 .wge-bg-inverse .wge-variant-secondary { color: var(--wge-color-on-inverse); border-color: var(--wge-color-on-inverse); }
 
 .wge-image { display: block; max-width: 100%; height: auto; }
-.wge-ratio-auto { aspect-ratio: auto; }
+.wge-ratio-auto { width: auto; }
 .wge-ratio-1-1 { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; }
 .wge-ratio-4-3 { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
 .wge-ratio-16-9 { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }

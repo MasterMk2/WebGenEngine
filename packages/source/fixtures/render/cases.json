@@ -139,6 +139,11 @@
   {"name": "page head: an unknown type", "source": "", "page": {"title": "t", "head": {"type": "video"}}, "renderError": {"code": "E_HEAD", "key": "head.type"}},
   {"name": "page head: a description that is not text", "source": "", "page": {"title": "t", "head": {"description": 3}}, "renderError": {"code": "E_HEAD", "key": "head.description"}},
   {"name": "page head: an unknown item", "source": "", "page": {"title": "t", "head": {"keywords": "a"}}, "renderError": {"code": "E_HEAD", "key": "head.keywords"}},
+  {
+    "name": "image with its size, in schema order",
+    "source": "<Image height=\"900\" width=\"1600\" ratio=\"auto\" alt=\"店内\" src=\"../media/0123456789abcdef.jpg\" />\n",
+    "html": "<img class=\"wge-image wge-ratio-auto\" src=\"../media/0123456789abcdef.jpg\" alt=\"店内\" width=\"1600\" height=\"900\" loading=\"lazy\" decoding=\"async\">\n"
+  },
   {"name": "invalid page language", "source": "", "page": {"title": "x", "lang": "ja\"><script>"}, "renderError": {"code": "E_LANG", "key": "lang"}},
   {"name": "default stylesheet", "stylesheet": "default.css"},
   {"name": "every class the schema can produce has a rule", "classCoverage": true},

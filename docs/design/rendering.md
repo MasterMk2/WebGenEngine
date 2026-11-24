@@ -87,7 +87,7 @@ JS の `renderFragment(doc, indent, { annotate: true })` は、エディタの�
 - 共通テストデータ（`fixtures/render/cases.json`）を、JS と PHP の両方で通す
 - スキーマから作られうるクラスのすべてに、CSS の規則があることを確かめる（`base.css` の書き漏れを防ぐ）
 - 無作為テスト（`differential/`）では、HTML が JS と PHP で一致することに加えて、次の 2 点を確かめる。Html の箱の中身は利用者が書いたものなので除く
-  - 出る属性が `class` `href` `src` `alt` `loading` `decoding` だけであること
+  - 出る属性が `class` `href` `src` `alt` `width` `height` `loading` `decoding` だけであること（`width` `height` は 2026-11-24 に足した）
   - 使ったクラスのすべてに CSS の規則があること
 - Html の無害化（§7）
   - 共通テストデータで、スクリプト、イベントの属性（`on…`）、`javascript:` などの URL、`svg` や `iframe` が消えることと、許した書き方が元のまま残ることを確かめる
@@ -118,7 +118,6 @@ JS の `renderFragment(doc, indent, { annotate: true })` は、エディタの�
 
 ## 8. まだ決めていないこと
 
-- 画像の幅と高さ（`width` `height` 属性）。レイアウトのずれ（CLS）を防ぐには要るが、アップロード時に寸法を記録する仕組みが先に要る
 - 構造化データ（JSON-LD）。説明文と OGP は 2026-11-24 に §5 の `head` で入れた
 - 見出しの大きさのトークン（いまはブラウザの既定のまま）
 - テーマを GUI で変える画面

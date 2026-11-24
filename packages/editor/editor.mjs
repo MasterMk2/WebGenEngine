@@ -1329,7 +1329,14 @@ function uploadControl(path) {
       status(serverMessage(res, why ?? '画像を送れませんでした。もう一度選んでください'), 'error');
       return;
     }
-    apply((doc) => sf.edit.setProp(doc, path, 'src', res.src), path);
+    // The size the server read keeps room for the picture before it loads; a size left from
+    // the picture this one replaces would be wrong, so it goes when none comes back.
+    const size = (v) => (Number.isInteger(v) && v >= 1 && v <= 20000 ? String(v) : null);
+    apply((doc) => {
+      sf.edit.setProp(doc, path, 'src', res.src);
+      sf.edit.setProp(doc, path, 'width', size(res.width));
+      sf.edit.setProp(doc, path, 'height', size(res.height));
+    }, path);
     status('画像を入れました。説明（alt）も書いてください', 'ok');
   });
   wrap.append(button('画像を選ぶ…', () => input.click()), input);

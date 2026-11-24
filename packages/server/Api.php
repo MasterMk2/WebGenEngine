@@ -351,7 +351,12 @@ final class Api
         if (!is_file($file)) {
             self::writeAtomically($file, $bytes);
         }
-        return self::reply(200, ['ok' => true, 'src' => '../media/' . $name]);
+        // The size, so the page keeps room for the picture before it loads (rendering.md §8 → schema).
+        // Read from the header only; an image whose header cannot be read is kept without one.
+        $size = @getimagesizefromstring($bytes);
+        $dims = is_array($size) && $size[0] >= 1 && $size[1] >= 1 && $size[0] <= 20000 && $size[1] <= 20000
+            ? ['width' => (int) $size[0], 'height' => (int) $size[1]] : [];
+        return self::reply(200, ['ok' => true, 'src' => '../media/' . $name] + $dims);
     }
 
     public static function imageType(string $bytes): ?string
