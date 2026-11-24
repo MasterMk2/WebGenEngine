@@ -163,6 +163,11 @@
     "html": "<img class=\"wge-image wge-ratio-auto\" src=\"../media/0123456789abcdef.jpg\" alt=\"店内\" width=\"1600\" height=\"900\" loading=\"lazy\" decoding=\"async\">\n"
   },
   {"name": "invalid page language", "source": "", "page": {"title": "x", "lang": "ja\"><script>"}, "renderError": {"code": "E_LANG", "key": "lang"}},
+  {
+    "name": "a card and a notice, and a small note",
+    "source": "<Stack surface=\"card\" gap=\"sm\">\n  <Text>本文<Small>（注 <Link href=\"/a\">詳細</Link>）</Small></Text>\n</Stack>\n<Stack surface=\"notice\" />\n",
+    "html": "<div class=\"wge-stack wge-gap-sm wge-surface-card\">\n  <p class=\"wge-text\">本文<small>（注 <a href=\"/a\">詳細</a>）</small></p>\n</div>\n<div class=\"wge-stack wge-surface-notice\"></div>\n"
+  },
   {"name": "default stylesheet", "stylesheet": "default.css"},
   {"name": "every class the schema can produce has a rule", "classCoverage": true},
   {"name": "theme: missing token", "themePatch": {"space": {"md": null}}, "renderError": {"code": "E_THEME", "key": "space.md"}},

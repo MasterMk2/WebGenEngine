@@ -29,7 +29,7 @@ const NAMES = { Section: '区画', Stack: '並び', Grid: '格子', Heading: '�
 const ATTRS = {
   padding: '上下の余白', background: '背景', width: '中身の幅', direction: '向き', align: '揃え', justify: '並びの配置',
   gap: '間隔', wrap: '折り返し', columns: '列の数', level: '見出しの段階', size: '文字の大きさ', href: 'リンク先',
-  variant: '種類', src: '画像の場所', alt: '代わりの文', ratio: '縦横の比',
+  variant: '種類', src: '画像の場所', alt: '代わりの文', ratio: '縦横の比', surface: '囲み',
 };
 // Where one name means something else on a component (a picture's own size, not a layout width).
 const ATTRS_OF = { Image: { width: '元の幅（px）', height: '元の高さ（px）' } };
@@ -37,6 +37,7 @@ const VALUES = {
   vertical: '縦', horizontal: '横', start: '先頭側', center: '中央', end: '末尾側', stretch: '伸ばす', between: '両端',
   true: 'する', false: 'しない', none: 'なし', subtle: '薄い色', primary: '主な色', inverse: '反転', secondary: '控えめ',
   narrow: '狭い', normal: '標準', wide: '広い', full: '全幅', auto: '元のまま', sm: '小', md: '中', lg: '大',
+  card: 'カード', notice: 'お知らせ枠',
 };
 const TEMPLATES = {
   Section: { type: 'Section', props: { padding: 'lg' }, children: [] },
@@ -46,7 +47,16 @@ const TEMPLATES = {
   Text: { type: 'Text', props: {}, children: [{ type: 'text', value: '文章を入れてください。' }] },
   Button: { type: 'Button', props: { href: '/' }, children: [{ type: 'text', value: 'ボタン' }] },
   Image: { type: 'Image', props: { src: 'sample/coffee.svg', alt: '' } },
+  // Stacks drawn as boxes, offered in the menu under names of their own.
+  Card: { type: 'Stack', props: { gap: 'sm', surface: 'card' }, children: [
+    { type: 'Heading', props: { level: '3' }, children: [{ type: 'text', value: '見出し' }] },
+    { type: 'Text', props: {}, children: [{ type: 'text', value: '文章を入れてください。' }] },
+  ] },
+  Notice: { type: 'Stack', props: { gap: 'sm', surface: 'notice' }, children: [
+    { type: 'Text', props: {}, children: [{ type: 'text', value: 'お知らせの文を入れてください。' }] },
+  ] },
 };
+const PRESET_NAMES = { Card: 'カード', Notice: 'お知らせ枠' };
 const LEGACY_KEY = 'wge-editor-source'; // the single slot the prototype used before the page store
 const PREVIEW_CSS = `
 [data-wge-path] { cursor: grab; }
@@ -829,13 +839,13 @@ insertPoint.addEventListener('pointerleave', (e) => {
 });
 
 // The menu lists the everyday blocks first; the boxes for layout come after a rule.
-const MENU = [['Heading', 'Text', 'Image', 'Button'], ['Section', 'Stack', 'Grid']];
+const MENU = [['Heading', 'Text', 'Image', 'Button'], ['Card', 'Notice'], ['Section', 'Stack', 'Grid']];
 let menuTarget = null;
 
 MENU.forEach((names, i) => {
   if (i > 0) insertMenu.append(document.createElement('hr'));
   for (const name of names) {
-    const b = button(NAMES[name], () => insertBlock(name));
+    const b = button(PRESET_NAMES[name] ?? NAMES[name], () => insertBlock(name));
     b.setAttribute('role', 'menuitem');
     insertMenu.append(b);
   }
@@ -870,7 +880,7 @@ function insertBlock(name) {
   const path = [...target.parent, target.index];
   if (!apply((doc) => sf.edit.insert(doc, target.parent, target.index, structuredClone(TEMPLATES[name])), path)) return;
   // A new heading or paragraph starts with its placeholder selected, so typing replaces it.
-  if (components.get(name).kind === 'text') afterLoad = () => startEditing(path, null, { selectAll: true });
+  if (components.get(TEMPLATES[name].type).kind === 'text') afterLoad = () => startEditing(path, null, { selectAll: true });
 }
 
 insertMenu.addEventListener('keydown', (e) => {
