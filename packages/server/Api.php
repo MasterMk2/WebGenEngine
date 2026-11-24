@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace WebGenEngine\Server;
 
 use PDO;
+use WebGenEngine\Source\Document;
 use WebGenEngine\Source\Node;
 use WebGenEngine\Source\RenderError;
 use WebGenEngine\Source\Renderer;
@@ -75,7 +76,8 @@ final class Api
                 + ($this->site !== null ? ['site' => true, 'siteName' => $this->site->name()] : []));
         }
         if ($method === 'GET' && $path === '/api/pages') {
-            return self::reply(200, ['ok' => true, 'pages' => $this->listPages(false)]);
+            // A site's header and footer are listed apart from its pages (site.md §5).
+            return self::reply(200, ['ok' => true, 'pages' => $this->listPages(false)] + ($this->site !== null ? ['parts' => $this->listParts()] : []));
         }
         if ($method === 'GET' && $path === '/api/deleted-pages') {
             return self::reply(200, ['ok' => true, 'pages' => $this->listDeleted()]);
@@ -93,6 +95,11 @@ final class Api
         [, $pageId, $action] = $m;
         // With a blog, its contents page is made from the posts and never edited.
         if ($this->blog !== null && $pageId === 'top') {
+            return self::reply(404, ['ok' => false, 'reason' => 'not-found']);
+        }
+        // A site's own parts are its header and footer only.
+        $isPart = $this->site !== null && Site::isPart($pageId);
+        if ($this->site !== null && !$isPart && str_starts_with($pageId, Site::PART_PREFIX)) {
             return self::reply(404, ['ok' => false, 'reason' => 'not-found']);
         }
         $versionId = isset($m[3]) ? (int) $m[3] : null;
@@ -130,6 +137,10 @@ final class Api
                 }
                 // A new page may come with its title and date (a new blog post), or a site's page with its path.
                 $meta = $input['meta'] ?? null;
+                // The header and footer have no title nor path.
+                if ($isPart && $meta !== null) {
+                    return self::reply(409, ['ok' => false, 'reason' => 'part']);
+                }
                 if ($meta !== null && ($problem = $this->checkMeta($meta)) !== null) {
                     return $problem;
                 }
@@ -158,6 +169,9 @@ final class Api
                 }
                 return $this->result($store->saveDraft($source, $base));
             case 'meta':
+                if ($isPart) {
+                    return self::reply(409, ['ok' => false, 'reason' => 'part']);
+                }
                 if (($problem = $this->checkMeta($input)) !== null) {
                     return $problem;
                 }
@@ -205,6 +219,9 @@ final class Api
                 // The site's own first page stays (without a blog, the editor opens it by default).
                 if ($pageId === 'top') {
                     return self::reply(409, ['ok' => false, 'reason' => 'top']);
+                }
+                if ($isPart) {
+                    return self::reply(409, ['ok' => false, 'reason' => 'part']);
                 }
                 // A published page is taken back first, so nothing on the site changes here.
                 return $this->result($store->delete());
@@ -320,7 +337,7 @@ final class Api
             return null;
         }
         foreach ($this->db->query('SELECT id FROM pages')->fetchAll(PDO::FETCH_COLUMN) as $other) {
-            if ((string) $other !== $pageId && $this->pathOf((string) $other) === $path) {
+            if ((string) $other !== $pageId && !Site::isPart((string) $other) && $this->pathOf((string) $other) === $path) {
                 return self::reply(409, ['ok' => false, 'reason' => 'path-taken']);
             }
         }
@@ -328,8 +345,12 @@ final class Api
     }
 
     // Before publishing: the page's path and the stylesheet are free, or files WGE wrote for them.
+    // The header and footer have no file of their own; the pages they go in are written already.
     private function checkWritable(string $pageId): ?array
     {
+        if (Site::isPart($pageId)) {
+            return null;
+        }
         foreach ([[$this->pathOf($pageId), $pageId], ['style.css', '']] as [$path, $owner]) {
             if (!$this->mayWrite($path, $owner)) {
                 return self::reply(409, ['ok' => false, 'reason' => 'path-occupied', 'path' => $path]);
@@ -402,7 +423,7 @@ final class Api
             WHERE p.id NOT IN (SELECT id FROM deleted_pages)')->fetchAll(PDO::FETCH_ASSOC);
         $pages = [];
         foreach ($rows as $r) {
-            if (($this->blog !== null && $r['id'] === 'top') || ($publishedOnly && $r['published'] === null)) {
+            if (($this->blog !== null && $r['id'] === 'top') || ($publishedOnly && $r['published'] === null) || ($this->site !== null && Site::isPart((string) $r['id']))) {
                 continue;
             }
             $page = [
@@ -536,8 +557,65 @@ final class Api
         self::writeAtomically($file, $html);
     }
 
+    /**
+     * The header and footer: whether each is loaded and published, and when its draft was saved.
+     *
+     * @return list<array{id: string, loaded: bool, published: bool, savedAt: int|null}>
+     */
+    private function listParts(): array
+    {
+        $parts = [];
+        foreach ([Site::HEADER, Site::FOOTER] as $id) {
+            $q = $this->db->prepare('SELECT published, draft_saved_at FROM pages WHERE id = ?');
+            $q->execute([$id]);
+            $row = $q->fetch(PDO::FETCH_ASSOC);
+            $parts[] = [
+                'id' => $id,
+                'loaded' => $row !== false,
+                'published' => $row !== false && $row['published'] !== null,
+                'savedAt' => $row !== false && $row['draft_saved_at'] !== null ? (int) $row['draft_saved_at'] : null,
+            ];
+        }
+        return $parts;
+    }
+
+    // The published version of the header or footer, for a page $depth folders down; null when none.
+    private function partOf(string $partId, int $depth): ?Document
+    {
+        try {
+            $source = (new PageStore($this->db, $partId, $this->now))->publishedSource();
+        } catch (PageNotLoaded) {
+            return null;
+        }
+        if ($source === null) {
+            return null;
+        }
+        $doc = $this->format->parse($source);
+        $this->site->relink($doc, $depth);
+        return $doc;
+    }
+
+    // After the header or footer is published or taken back: every page written, again where it is.
+    private function rewriteAll(): void
+    {
+        foreach ($this->db->query("SELECT DISTINCT page FROM site_files WHERE page != '' ORDER BY page")->fetchAll(PDO::FETCH_COLUMN) as $id) {
+            try {
+                $source = (new PageStore($this->db, (string) $id, $this->now))->publishedSource();
+            } catch (PageNotLoaded) {
+                continue;
+            }
+            if ($source !== null) {
+                $this->writeSitePage((string) $id, $source, false);
+            }
+        }
+    }
+
     private function writeSitePage(string $pageId, ?string $source, bool $move): void
     {
+        if (Site::isPart($pageId)) {
+            $this->rewriteAll();
+            return;
+        }
         $live = $this->livePath($pageId);
         if ($source === null) {
             if ($live !== null) {
@@ -553,7 +631,8 @@ final class Api
             $doc = $this->format->parse($source);
             // Addresses from the site's root and the editor's pictures, as seen from this page (site.md §3.1).
             $this->site->relink($doc, $depth);
-            $html = $this->renderer->renderPage($doc, $title, 'ja', str_repeat('../', $depth) . 'style.css', false, $this->siteHead($path, $doc, $meta['description'] ?? ''));
+            // Only the published versions of the header and footer go in: never their drafts.
+            $html = $this->renderer->renderPage($doc, $title, 'ja', str_repeat('../', $depth) . 'style.css', false, $this->siteHead($path, $doc, $meta['description'] ?? ''), $this->partOf(Site::HEADER, $depth), $this->partOf(Site::FOOTER, $depth));
         } catch (SourceError | RenderError $e) {
             error_log('wge: cannot render ' . $pageId . ': ' . $e->getMessage());
             return;

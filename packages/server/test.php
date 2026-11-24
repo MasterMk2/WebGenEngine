@@ -559,6 +559,45 @@ check(array_column($body['pages'], 'livePath', 'id')['deep'] === null, 'a page t
 [$status, $body] = $spost('/api/pages/again/load', ['initialSource' => $links, 'meta' => ['title' => '同じ場所', 'path' => 'a/b/deep.html']]);
 check($status === 409 && $body['reason'] === 'path-taken', 'a deleted page keeps its path, for when it is restored');
 
+// The header and footer (site.md §5).
+[, $body] = $siteApi->handle('GET', '/api/pages', '', []);
+check(($body['parts'] ?? null) === [['id' => 'part-header', 'loaded' => false, 'published' => false, 'savedAt' => null], ['id' => 'part-footer', 'loaded' => false, 'published' => false, 'savedAt' => null]], 'the list has the header and footer apart, not loaded at first');
+[$status] = $spost('/api/pages/part-menu/load', ['initialSource' => '']);
+check($status === 404, 'no other part exists');
+[$status, $body] = $spost('/api/pages/part-header/load', ['initialSource' => '', 'meta' => ['title' => 'ヘッダー', 'path' => 'header.html']]);
+check($status === 409 && $body['reason'] === 'part', 'a part has no title nor path');
+$header = "<Section padding=\"sm\">\n  <Stack direction=\"horizontal\">\n    <Text><Link href=\"/\">合成の祭</Link></Text>\n  </Stack>\n  <Image src=\"../media/fedcba9876543210.png\" alt=\"ロゴ\" />\n  <Text><Link href=\"/exhibitors-2026.html\">出展</Link></Text>\n</Section>\n";
+[$status, $body] = $spost('/api/pages/part-header/load', ['initialSource' => $header]);
+check($status === 200 && $body['meta'] === null, 'the header is loaded as a page without meta');
+[$status, $body] = $spost('/api/pages/part-footer/load', ['initialSource' => "<Link href=\"/\">x</Link>\n"]);
+check($status === 422 && $body['reason'] === 'invalid', 'a part must read back as a page, as any page');
+check(!str_contains($sread('index.html'), 'wge-site-header'), 'a header not published is on no page');
+[$status] = $spost('/api/pages/part-header/publish', ['revision' => 0]);
+$top = $sread('index.html');
+$enTop = $sread('en/top.html');
+check($status === 200 && str_contains($top, "<body>\n<header class=\"wge-site-header\">") && str_contains($sread('exhibitors-2026.html'), 'wge-site-header') && str_contains($enTop, 'wge-site-header'), 'publishing the header writes it into every published page');
+check(str_contains($top, '<a href="./">合成の祭</a>') && str_contains($top, 'src="media/fedcba9876543210.png"') && str_contains($top, 'href="exhibitors-2026.html">出展'), "the header's addresses are made relative at depth 0");
+check(str_contains($enTop, '<a href="../">合成の祭</a>') && str_contains($enTop, 'src="../media/fedcba9876543210.png"') && str_contains($enTop, 'href="../exhibitors-2026.html">出展'), 'and one folder up at depth 1');
+check(!str_contains($top, 'fedcba9876543210.png" content') && str_contains($top, 'og:image" content="https://fest.example/media/0123456789abcdef.png"'), "the picture for sharing is the page's own, not the header's");
+check(!is_file($siteDir . '/part-header/index.html') && !is_dir($siteDir . '/part-header'), 'the header has no file of its own');
+[$status] = $spost('/api/pages/part-header/draft', ['source' => "<Text>合成の下書き</Text>\n", 'baseRevision' => 0]);
+check($status === 200 && !str_contains($sread('index.html'), '合成の下書き'), "the header's draft is on no page");
+[$status] = $spost('/api/pages/part-footer/load', ['initialSource' => "<Text size=\"sm\">© 合成の祭</Text>\n"]);
+[$status] = $spost('/api/pages/part-footer/publish', ['revision' => 0]);
+check($status === 200 && str_contains($sread('index.html'), "</main>\n<footer class=\"wge-site-footer\">\n  <p class=\"wge-text wge-size-sm\">© 合成の祭</p>\n</footer>"), 'the footer goes after the page');
+[$status, $body] = $spost('/api/pages/part-footer/meta', ['title' => '題']);
+check($status === 409 && $body['reason'] === 'part', 'a part takes no title');
+[$status, $body] = $spost('/api/pages/part-footer/delete', []);
+check($status === 409 && $body['reason'] === 'part', 'a part is not deleted');
+[, $body] = $siteApi->handle('GET', '/api/pages', '', []);
+check(!in_array('part-header', array_column($body['pages'], 'id'), true) && $body['parts'][0]['loaded'] === true && $body['parts'][0]['published'] === true && is_int($body['parts'][0]['savedAt']), 'the parts are listed apart, loaded and published');
+[$status] = $spost('/api/pages/noimg/load', ['initialSource' => "<Text>絵なし</Text>\n", 'meta' => ['title' => '絵なし', 'path' => 'plain.html']]);
+[$status] = $spost('/api/pages/noimg/publish', ['revision' => 0]);
+$plain = $sread('plain.html');
+check($status === 200 && str_contains($plain, 'wge-site-header') && str_contains($plain, 'wge-site-footer') && !str_contains($plain, 'og:image'), 'a page published later gets the parts, and no picture for sharing from the header');
+[$status] = $spost('/api/pages/part-header/undo-publish', ['versionId' => $liveIn('part-header')]);
+check($status === 200 && !str_contains($sread('index.html'), 'wge-site-header') && !str_contains($sread('plain.html'), 'wge-site-header') && str_contains($sread('plain.html'), 'wge-site-footer'), 'taking the header back removes it from every page');
+
 // A stylesheet WGE did not write is not replaced.
 $plainDir = sys_get_temp_dir() . '/wge-test-pages-' . bin2hex(random_bytes(4));
 mkdir($plainDir);

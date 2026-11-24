@@ -1,7 +1,7 @@
 <?php
 // A site of pages (2026-11-24): each page is written where its path says (exhibitors.html,
-// en/index.html), and WGE keeps a list of the files it wrote so it never removes or overwrites
-// any other. Spec: docs/design/site.md.
+// en/index.html), WGE keeps a list of the files it wrote so it never removes or overwrites any
+// other, and every page gets the site's header and footer. Spec: docs/design/site.md.
 
 declare(strict_types=1);
 
@@ -11,6 +11,12 @@ use WebGenEngine\Source\Node;
 
 final class Site
 {
+    /** The site's header and footer: kept as pages, drafted and published the same way (site.md §5). */
+    public const HEADER = 'part-header';
+    public const FOOTER = 'part-footer';
+    /** Ids starting so are the site's own parts; only the two above exist. */
+    public const PART_PREFIX = 'part-';
+
     /** Lower-case names joined by "/", ending in .html; three folders at most (site.md §3). */
     private const PATH = '#^(?:[a-z0-9][a-z0-9-]{0,63}/){0,3}[a-z0-9][a-z0-9-]{0,63}\.html$#D';
     /** First folders WGE uses itself. */
@@ -34,6 +40,11 @@ final class Site
     public function name(): string
     {
         return $this->name;
+    }
+
+    public static function isPart(string $pageId): bool
+    {
+        return $pageId === self::HEADER || $pageId === self::FOOTER;
     }
 
     public static function validName(string $name): bool

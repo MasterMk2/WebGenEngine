@@ -205,7 +205,10 @@ function runRenderCase(SourceFormat $fmt, array $schema, array $defaultTheme, st
             }
             if (isset($c['page'])) {
                 $p = $c['page'];
-                $page = $renderer->renderPage($doc, $p['title'], $p['lang'] ?? 'ja', $p['stylesheetHref'] ?? 'style.css', $trustRaw, $p['head'] ?? []);
+                // The site's header and footer are given as sources (site.md §5).
+                $header = isset($p['header']) ? $fmt->parse($p['header']) : null;
+                $footer = isset($p['footer']) ? $fmt->parse($p['footer']) : null;
+                $page = $renderer->renderPage($doc, $p['title'], $p['lang'] ?? 'ja', $p['stylesheetHref'] ?? 'style.css', $trustRaw, $p['head'] ?? [], $header, $footer);
                 if (isset($c['pageHtml'])) {
                     $check($page === $c['pageHtml'], 'page', $page, $c['pageHtml']);
                 }

@@ -134,7 +134,9 @@ function runRenderCase(c) {
         check(html === c.html, 'html', html, c.html);
       }
       if (c.page) {
-        const page = renderer.renderPage(doc, { ...c.page, trustRaw });
+        // The site's header and footer are given as sources (site.md §5).
+        const parts = { header: c.page.header === undefined ? null : fmt.parse(c.page.header), footer: c.page.footer === undefined ? null : fmt.parse(c.page.footer) };
+        const page = renderer.renderPage(doc, { ...c.page, ...parts, trustRaw });
         if (c.pageHtml !== undefined) check(page === c.pageHtml, 'page', page, c.pageHtml);
       }
     }
