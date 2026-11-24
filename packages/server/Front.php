@@ -27,6 +27,8 @@ final class Front
         ?\Closure $now = null,
         /** The editor's sample images beside published pages (not for a blog, whose posts start without them) */
         private readonly bool $copySamples = true,
+        /** The site's theme, which the editor's preview reads as source/theme.json; null is the default one */
+        private readonly ?array $theme = null,
     ) {
         $this->now = $now ?? static fn (): int => (int) floor(microtime(true) * 1000);
     }
@@ -62,6 +64,10 @@ final class Front
         if ($method === 'GET' && preg_match('#^/media/([0-9a-f]{16}\.(?:jpg|png|gif|webp))$#D', $target, $m) === 1) {
             $file = StaticFiles::read($this->siteDir . '/media', $m[1]);
             return $file === null ? self::NOT_FOUND : [200, ['Content-Type' => $file[0], 'Cache-Control' => 'no-store', 'X-Content-Type-Options' => 'nosniff'], $file[1]];
+        }
+        if ($method === 'GET' && $target === '/source/theme.json') {
+            $theme = $this->theme ?? json_decode((string) file_get_contents($this->packages . '/source/theme.default.json'), true, 512, JSON_THROW_ON_ERROR);
+            return [200, ['Content-Type' => 'application/json; charset=utf-8', 'Cache-Control' => 'no-store'], json_encode($theme, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)];
         }
         if ($method === 'GET' && preg_match('#^/(editor|source)/(.*)$#D', $target, $m) === 1) {
             $file = StaticFiles::read($this->packages . '/' . $m[1], $m[2]);

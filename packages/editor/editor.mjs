@@ -16,7 +16,8 @@ const fetchText = (p) => fetch(p).then((r) => {
 });
 const [schema, theme, baseCss, sample] = await Promise.all([
   fetchText('../source/schema.json').then(JSON.parse),
-  fetchText('../source/theme.default.json').then(JSON.parse),
+  // The site's theme when the server has one (rendering.md §4); serve.mjs has only the default.
+  fetchText('../source/theme.json').catch(() => fetchText('../source/theme.default.json')).then(JSON.parse),
   fetchText('../source/render/base.css'),
   fetchText('sample/page.txt'),
 ]);

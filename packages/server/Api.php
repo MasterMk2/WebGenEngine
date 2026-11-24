@@ -386,6 +386,10 @@ final class Api
         try {
             $doc = $this->format->parse($source);
             $html = $this->renderer->renderPage($doc, $title, 'ja', $pageId === 'top' ? 'style.css' : '../style.css', false, $this->pageHead($pageId, $doc, $meta['description'] ?? ''));
+            // A post carries its date and the way back to the contents (blog.md §7).
+            if ($this->blog !== null && $pageId !== 'top' && is_string($meta['date'] ?? null)) {
+                $html = $this->blog->framePost($html, $meta['date']);
+            }
         } catch (SourceError | RenderError $e) {
             // Drafts are checked on save, so this is a bug; the published version stays recorded.
             error_log('wge: cannot render ' . $pageId . ': ' . $e->getMessage());
@@ -415,6 +419,28 @@ final class Api
             $head['image'] = $image;
         }
         return $head;
+    }
+
+    // A published post's first picture as the contents page sees it (blog.md §7), or null.
+    private function contentsImage(string $pageId): ?string
+    {
+        $source = (new PageStore($this->db, $pageId, $this->now))->publishedSource();
+        try {
+            $src = $source === null ? null : self::firstImage($this->format->parse($source));
+        } catch (SourceError) {
+            return null;
+        }
+        return $src === null ? null : self::contentsImageOf($src);
+    }
+
+    // A picture of a post, as written in it, seen from the contents page one folder up: one the
+    // editor uploaded (../media/…) or an http(s) address. Anything else shows no picture.
+    public static function contentsImageOf(string $src): ?string
+    {
+        if (preg_match('#^\.\./(media/[0-9a-f]{16}\.(?:jpg|png|gif|webp))$#D', $src, $m) === 1) {
+            return $m[1];
+        }
+        return preg_match('#^https?://[^\s"<>]+$#D', $src) === 1 ? $src : null;
     }
 
     private static function firstImage(Node $node): ?string
@@ -457,6 +483,27 @@ final class Api
         return $origin . '/' . implode('/', $segments) . $suffix;
     }
 
+    /**
+     * Writes every published page again, with the blog's contents page, its feed and style.css:
+     * after a new version of WGE or a new theme, the site looks as the next publish would make it.
+     * Drafts and the database are not changed. Returns the ids written (server.md §6).
+     *
+     * @return list<string>
+     */
+    public function rebuildSite(): array
+    {
+        $ids = array_column($this->listPages(true), 'id');
+        if ($this->blog === null && $this->db->query("SELECT 1 FROM pages WHERE id = 'top' AND published IS NOT NULL")->fetchColumn() !== false) {
+            array_unshift($ids, 'top');
+        }
+        foreach ($ids as $id) {
+            $this->writeSite($id, (new PageStore($this->db, $id, $this->now))->publishedSource());
+        }
+        $this->writeBlog();
+        self::writeAtomically($this->siteDir . '/style.css', $this->renderer->stylesheet());
+        return $ids;
+    }
+
     // The blog's contents page and feed, from the published posts (blog.md).
     private function writeBlog(): void
     {
@@ -464,7 +511,7 @@ final class Api
             return;
         }
         $posts = array_map(
-            static fn (array $p): array => ['id' => $p['id'], 'title' => $p['title'], 'date' => $p['date'] ?? '1970-01-01', 'description' => $p['description']],
+            fn (array $p): array => ['id' => $p['id'], 'title' => $p['title'], 'date' => $p['date'] ?? '1970-01-01', 'description' => $p['description'], 'image' => $this->contentsImage($p['id'])],
             $this->listPages(true),
         );
         try {

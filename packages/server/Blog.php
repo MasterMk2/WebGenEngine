@@ -1,8 +1,10 @@
 <?php
 // The blog's own pages (2026-11-23): its contents page (index.html) and its feed (feed.xml),
-// made again from the published posts each time one is published, taken back or renamed.
-// The contents page is written in the source format and rendered like any page, so it looks
-// like the posts and passes the same checks (R4). Spec: docs/design/blog.md.
+// made again from the published posts each time one is published, taken back or renamed,
+// and the frame around each post: its date and the way back to the contents (2026-11-24).
+// The contents page's heading is written in the source format and rendered like any page;
+// the list of posts and the frame are written here, with fixed classes and every value
+// escaped, so a post's title or description never becomes markup. Spec: docs/design/blog.md.
 
 declare(strict_types=1);
 
@@ -29,34 +31,86 @@ final class Blog
     }
 
     /**
-     * The files to write, by name in the site folder. $posts are the published posts, newest first.
+     * The files to write, by name in the site folder. $posts are the published posts, newest first;
+     * "image" is the post's first picture as seen from the contents page (Api::contentsImage).
      *
-     * @param list<array{id: string, title: string, date: string, description?: string}> $posts
+     * @param list<array{id: string, title: string, date: string, description?: string, image?: string|null}> $posts
      * @return array<string, string|null> null removes the file
      */
     public function files(array $posts): array
     {
         $head = $this->siteUrl === null ? [] : ['url' => rtrim($this->siteUrl, '/') . '/', 'type' => 'website', 'siteName' => $this->title];
-        $html = $this->renderer->renderPage($this->format->parse($this->contentsSource($posts)), $this->title, 'ja', 'style.css', false, $head);
-        return ['index.html' => $html, 'feed.xml' => $this->feed($posts)];
+        $html = $this->renderer->renderPage($this->format->parse($this->contentsSource()), $this->title, 'ja', 'style.css', false, $head);
+        return ['index.html' => self::insertIntoMain($html, '', $this->contentsList($posts)), 'feed.xml' => $this->feed($posts)];
     }
 
-    /** @param list<array{id: string, title: string, date: string, description?: string}> $posts */
-    public function contentsSource(array $posts): string
+    // The contents page's heading: the blog's name on a band of the theme's main colour, in a
+    // Stack so that it lines up with the list (a heading's own margin is 0, so it would not centre).
+    public function contentsSource(): string
     {
-        $lines = ['<Section padding="lg" width="narrow">', '  <Stack gap="lg">', '    <Heading level="1">' . self::text($this->title) . '</Heading>'];
-        foreach ($posts as $post) {
-            $lines[] = '    <Stack gap="xs">';
-            $lines[] = '      <Text size="sm">' . self::text(self::dateLabel($post['date'])) . '</Text>';
-            $lines[] = '      <Heading level="2"><Link href="' . self::text($post['id']) . '/">' . self::text($post['title']) . '</Link></Heading>';
-            $lines[] = '    </Stack>';
-        }
+        return "<Section background=\"primary\" padding=\"lg\" width=\"narrow\">\n  <Stack>\n    <Heading level=\"1\">" . self::text($this->title) . "</Heading>\n  </Stack>\n</Section>\n";
+    }
+
+    /**
+     * The list of posts under the heading: date, title, description and first picture of each.
+     * The whole row opens the post (CSS); its link is the title.
+     *
+     * @param list<array{id: string, title: string, date: string, description?: string, image?: string|null}> $posts
+     */
+    public function contentsList(array $posts): string
+    {
         if ($posts === []) {
-            $lines[] = '    <Text>まだ記事はありません。</Text>';
+            return "<div class=\"wge-posts\">\n  <p class=\"wge-posts-empty\">まだ記事はありません。</p>\n</div>\n";
         }
-        $lines[] = '  </Stack>';
-        $lines[] = '</Section>';
+        $lines = ['<div class="wge-posts">', '  <ol class="wge-posts-list">'];
+        foreach ($posts as $post) {
+            $lines[] = '    <li class="wge-posts-item">';
+            $lines[] = '      <div class="wge-posts-body">';
+            $lines[] = '        ' . self::time('wge-posts-date', $post['date']);
+            $lines[] = '        <h2 class="wge-posts-title"><a href="' . self::h($post['id']) . '/">' . self::h($post['title']) . '</a></h2>';
+            if (($post['description'] ?? '') !== '') {
+                $lines[] = '        <p class="wge-posts-description">' . self::h($post['description']) . '</p>';
+            }
+            $lines[] = '      </div>';
+            // Beside its title the picture says nothing more, so screen readers skip it (alt="").
+            if (($post['image'] ?? null) !== null) {
+                $lines[] = '      <img class="wge-posts-thumb" src="' . self::h($post['image']) . '" alt="" loading="lazy" decoding="async">';
+            }
+            $lines[] = '    </li>';
+        }
+        $lines[] = '  </ol>';
+        if ($this->siteUrl !== null) {
+            $lines[] = '  <p class="wge-posts-feed"><a href="feed.xml">RSS フィード（新しい記事の知らせを受け取る）</a></p>';
+        }
+        $lines[] = '</div>';
         return implode("\n", $lines) . "\n";
+    }
+
+    // A published post with its frame: the way back to the contents and the date above the
+    // post's own text, and a link back to the contents after it.
+    public function framePost(string $page, string $date): string
+    {
+        $head = "<div class=\"wge-post-head\">\n  <div>\n    <p class=\"wge-post-crumb\"><a href=\"../\">‹ " . self::h($this->title) . "</a></p>\n    "
+            . self::time('wge-post-date', $date) . "\n  </div>\n</div>\n";
+        $foot = "<div class=\"wge-post-foot\">\n  <div><a class=\"wge-post-back\" href=\"../\">‹ 記事の一覧へ</a></div>\n</div>\n";
+        return self::insertIntoMain($page, $head, $foot);
+    }
+
+    // renderPage puts the page's body in <main class="wge-page"> (rendering.md §5); $before goes
+    // first in it and $after last. Both are markup made here, never a page's source.
+    private static function insertIntoMain(string $page, string $before, string $after): string
+    {
+        $open = "<main class=\"wge-page\">\n";
+        $close = "</main>\n";
+        if (substr_count($page, $open) !== 1 || substr_count($page, $close) !== 1) {
+            throw new \LogicException('the page has no single <main class="wge-page">');
+        }
+        return str_replace([$open, $close], [$open . $before, $after . $close], $page);
+    }
+
+    private static function time(string $class, string $date): string
+    {
+        return '<time class="' . $class . '" datetime="' . self::h($date) . '">' . self::h(self::dateLabel($date)) . '</time>';
     }
 
     /** @param list<array{id: string, title: string, date: string, description?: string}> $posts */
@@ -84,6 +138,12 @@ final class Blog
     {
         [$y, $m, $d] = array_map('intval', explode('-', $date));
         return "{$y}年{$m}月{$d}日";
+    }
+
+    // Text and attribute values in HTML: & < > " and ' as character references.
+    private static function h(string $s): string
+    {
+        return htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5, 'UTF-8');
     }
 
     // Text and attribute values of the source format: & < > and " as character references.

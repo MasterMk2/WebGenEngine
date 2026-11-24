@@ -60,6 +60,7 @@
 | `font.body` | 英数字、空白、`,` `"` `-` だけ |
 
 - 問題は決まった順番（`space` → `fontSize` → `width` → `radius` → `breakpoint` → `color` → `font` → 未知の項目）で探し、最初の 1 件を返す
+- サーバー（`trusted-front.php`・`router.php`）は、`WGE_DATA/theme.json` があればそれをテーマにする（2026-11-24）。形が違えば何も配らない（503。`--rebuild` では終了コード 1）。エディタのプレビューは `source/theme.json` を読み、サーバーが同じテーマを返す（無ければ既定のテーマ。`serve.mjs` では `theme.default.json` に戻る）
 - `space` の項目は `schema.json` の `tokens.space`、`color` などの項目は `schema.json` の `theme` で決める
 
 ## 5. ページ全体

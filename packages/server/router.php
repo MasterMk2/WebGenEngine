@@ -43,7 +43,7 @@ if (str_starts_with($path, '/api/')) {
     // The port the browser uses, which differs from the container's (run-dev.sh sets it).
     $port = getenv('WGE_PORT') ?: '8766';
     $format = SourceFormat::fromSchemaFile($packages . '/source/schema.json');
-    $renderer = Renderer::fromFiles($packages . '/source');
+    $renderer = Renderer::fromFiles($packages . '/source', devTheme($data));
     // WGE_BLOG_TITLE makes the site a blog, as with trusted-front.php (blog.md).
     $blogTitle = trim((string) getenv('WGE_BLOG_TITLE'));
     $api = new Api(
@@ -60,6 +60,14 @@ if (str_starts_with($path, '/api/')) {
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
     echo json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+    return true;
+}
+
+// The editor's preview uses the site's theme, as trusted-front.php does (rendering.md §4).
+if ($path === '/source/theme.json') {
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    echo json_encode(devTheme($data) ?? json_decode((string) file_get_contents($packages . '/source/theme.default.json'), true), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
     return true;
 }
 
@@ -86,3 +94,10 @@ if (preg_match('#^/(editor|source)/(.*)$#D', $path, $m) === 1) {
 
 http_response_code(404);
 return true;
+
+// WGE_DATA/theme.json, the site's own theme, or null for the default one.
+function devTheme(string $data): ?array
+{
+    $file = $data . '/theme.json';
+    return is_file($file) ? json_decode((string) file_get_contents($file), true, 512, JSON_THROW_ON_ERROR) : null;
+}
