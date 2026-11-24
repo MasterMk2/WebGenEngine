@@ -210,7 +210,7 @@ function result(source, ops) {
 // R4 on the published HTML: layout lives only in classes (no style attribute or
 // other attributes outside a fixed set), and every class has a CSS rule.
 // Raw Html blocks are the author's own markup, so they are left out of the check.
-const ALLOWED_ATTRS = new Set(['class', 'href', 'src', 'alt', 'loading', 'decoding']);
+const ALLOWED_ATTRS = new Set(['class', 'href', 'src', 'alt', 'width', 'height', 'loading', 'decoding']);
 function htmlProblem(doc) {
   const html = renderer.renderFragment(stripRaw(doc));
   for (const tag of html.matchAll(/<([a-z0-9]+)((?:\s[a-z-]+="[^"]*")*)>/g)) {

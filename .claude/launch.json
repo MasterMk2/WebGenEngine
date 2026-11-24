@@ -12,6 +12,12 @@
       "runtimeExecutable": "wsl",
       "runtimeArgs": ["-d", "Ubuntu", "--", "sh", "packages/server/run-dev.sh"],
       "port": 8766
+    },
+    {
+      "name": "editor-blog",
+      "runtimeExecutable": "wsl",
+      "runtimeArgs": ["-d", "Ubuntu", "--", "sh", "packages/server/run-dev.sh", "php:8.3-apache", "8767", "合成のブログ"],
+      "port": 8767
     }
   ]
 }

@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace WebGenEngine\Server;
 
 use PDO;
+use WebGenEngine\Source\Node;
 use WebGenEngine\Source\RenderError;
 use WebGenEngine\Source\Renderer;
 use WebGenEngine\Source\SourceError;
@@ -20,6 +21,8 @@ final class Api
     private const PAGE_ID = '[a-z0-9][a-z0-9-]{0,63}';
     private const MAX_SOURCE = 2_000_000;
     private const MAX_TITLE = 120;
+    /** A description for search results and sharing; longer ones are cut there anyway. */
+    private const MAX_DESCRIPTION = 300;
     /** An image's bytes at most; the editor makes photos smaller before it sends them. */
     public const MAX_IMAGE = 2_500_000;
     private const TITLES = ['top' => 'トップページ'];
@@ -129,7 +132,7 @@ final class Api
                 }
                 $state = $store->load($source);
                 if ($meta !== null && $this->metaOf($pageId) === null) {
-                    $this->setMeta($pageId, $meta['title'], $meta['date']);
+                    $this->setMeta($pageId, $meta['title'], $meta['date'], $meta['description'] ?? '');
                 }
                 return self::reply(200, ['ok' => true] + $state + ['meta' => $this->metaOf($pageId)]);
             case 'draft':
@@ -147,7 +150,8 @@ final class Api
                     return $problem;
                 }
                 $published = $store->publishedSource();
-                $this->setMeta($pageId, $input['title'], $input['date']);
+                // Without "description", the one kept stays.
+                $this->setMeta($pageId, $input['title'], $input['date'], $input['description'] ?? null);
                 if ($published !== null) {
                     $this->writeSite($pageId, $published);
                 }
@@ -232,32 +236,39 @@ final class Api
         if (!is_string($date) || preg_match('/^(\d{4})-(\d{2})-(\d{2})$/D', $date, $d) !== 1 || !checkdate((int) $d[2], (int) $d[3], (int) $d[1])) {
             return self::reply(422, ['ok' => false, 'reason' => 'invalid-date']);
         }
+        // An optional description of one line, up to 300 characters; empty means none.
+        $description = $meta['description'] ?? '';
+        if (!is_string($description) || !mb_check_encoding($description, 'UTF-8') || mb_strlen($description) > self::MAX_DESCRIPTION || preg_match('/[\x00-\x1f\x7f]/', $description) === 1) {
+            return self::reply(422, ['ok' => false, 'reason' => 'invalid-description']);
+        }
         return null;
     }
 
-    /** @return array{title: string, date: string}|null */
+    /** @return array{title: string, date: string, description: string}|null */
     private function metaOf(string $pageId): ?array
     {
-        $q = $this->db->prepare('SELECT title, date FROM page_meta WHERE id = ?');
+        $q = $this->db->prepare('SELECT title, date, description FROM page_meta WHERE id = ?');
         $q->execute([$pageId]);
         $row = $q->fetch(PDO::FETCH_ASSOC);
-        return $row === false ? null : ['title' => (string) $row['title'], 'date' => (string) $row['date']];
+        return $row === false ? null : ['title' => (string) $row['title'], 'date' => (string) $row['date'], 'description' => (string) $row['description']];
     }
 
-    private function setMeta(string $pageId, string $title, string $date): void
+    // A null description keeps the one stored (or none, for a new row).
+    private function setMeta(string $pageId, string $title, string $date, ?string $description): void
     {
-        $this->db->prepare('INSERT INTO page_meta (id, title, date) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET title = excluded.title, date = excluded.date')
-            ->execute([$pageId, trim($title), $date]);
+        $this->db->prepare('INSERT INTO page_meta (id, title, date, description) VALUES (?, ?, ?, COALESCE(?, \'\'))
+            ON CONFLICT(id) DO UPDATE SET title = excluded.title, date = excluded.date, description = COALESCE(?, page_meta.description)')
+            ->execute([$pageId, trim($title), $date, $description === null ? null : trim($description), $description === null ? null : trim($description)]);
     }
 
     /**
      * The pages, newest date first (pages without a date last, by id).
      *
-     * @return list<array{id: string, title: string, date: string|null, published: bool, savedAt: int|null}>
+     * @return list<array{id: string, title: string, date: string|null, description: string, published: bool, savedAt: int|null}>
      */
     private function listPages(bool $publishedOnly): array
     {
-        $rows = $this->db->query('SELECT p.id, p.published, p.draft_saved_at, m.title, m.date FROM pages p LEFT JOIN page_meta m ON m.id = p.id
+        $rows = $this->db->query('SELECT p.id, p.published, p.draft_saved_at, m.title, m.date, m.description FROM pages p LEFT JOIN page_meta m ON m.id = p.id
             WHERE p.id NOT IN (SELECT id FROM deleted_pages)')->fetchAll(PDO::FETCH_ASSOC);
         $pages = [];
         foreach ($rows as $r) {
@@ -268,6 +279,7 @@ final class Api
                 'id' => (string) $r['id'],
                 'title' => $this->titleOf($r),
                 'date' => $r['date'] !== null ? (string) $r['date'] : null,
+                'description' => (string) ($r['description'] ?? ''),
                 'published' => $r['published'] !== null,
                 'savedAt' => $r['draft_saved_at'] !== null ? (int) $r['draft_saved_at'] : null,
             ];
@@ -329,7 +341,12 @@ final class Api
         if (!is_file($file)) {
             self::writeAtomically($file, $bytes);
         }
-        return self::reply(200, ['ok' => true, 'src' => '../media/' . $name]);
+        // The size, so the page keeps room for the picture before it loads (rendering.md §8 → schema).
+        // Read from the header only; an image whose header cannot be read is kept without one.
+        $size = @getimagesizefromstring($bytes);
+        $dims = is_array($size) && $size[0] >= 1 && $size[1] >= 1 && $size[0] <= 20000 && $size[1] <= 20000
+            ? ['width' => (int) $size[0], 'height' => (int) $size[1]] : [];
+        return self::reply(200, ['ok' => true, 'src' => '../media/' . $name] + $dims);
     }
 
     public static function imageType(string $bytes): ?string
@@ -358,11 +375,17 @@ final class Api
             if (is_file($file)) {
                 unlink($file);
             }
+            // The post's own folder goes too, when nothing else is in it.
+            if ($pageId !== 'top' && is_dir(dirname($file)) && (scandir(dirname($file)) ?: []) === ['.', '..']) {
+                rmdir(dirname($file));
+            }
             return;
         }
-        $title = $this->metaOf($pageId)['title'] ?? (self::TITLES[$pageId] ?? $pageId);
+        $meta = $this->metaOf($pageId);
+        $title = $meta['title'] ?? (self::TITLES[$pageId] ?? $pageId);
         try {
-            $html = $this->renderer->renderPage($this->format->parse($source), $title, 'ja', $pageId === 'top' ? 'style.css' : '../style.css');
+            $doc = $this->format->parse($source);
+            $html = $this->renderer->renderPage($doc, $title, 'ja', $pageId === 'top' ? 'style.css' : '../style.css', false, $this->pageHead($pageId, $doc, $meta['description'] ?? ''));
         } catch (SourceError | RenderError $e) {
             // Drafts are checked on save, so this is a bug; the published version stays recorded.
             error_log('wge: cannot render ' . $pageId . ': ' . $e->getMessage());
@@ -372,6 +395,68 @@ final class Api
         self::writeAtomically($file, $html);
     }
 
+    // The description, and where the page is seen for sharing (blog.md §5): the address and the
+    // first picture on the page need the site's URL, so without one only the description is written.
+    private function pageHead(string $pageId, Node $doc, string $description): array
+    {
+        $head = ['description' => $description];
+        if ($this->siteUrl === null || preg_match('#^https?://[^\s"<>]+$#D', $this->siteUrl) !== 1) {
+            return $head;
+        }
+        $url = rtrim($this->siteUrl, '/') . '/' . ($pageId === 'top' ? '' : "{$pageId}/");
+        $head['url'] = $url;
+        $head['type'] = $this->blog !== null ? 'article' : 'website';
+        if ($this->blog !== null) {
+            $head['siteName'] = $this->blog->title();
+        }
+        $src = self::firstImage($doc);
+        $image = $src === null ? null : self::resolveUrl($url, $src);
+        if ($image !== null) {
+            $head['image'] = $image;
+        }
+        return $head;
+    }
+
+    private static function firstImage(Node $node): ?string
+    {
+        if ($node->type === 'Image' && is_string($node->props['src'] ?? null)) {
+            return $node->props['src'];
+        }
+        foreach ($node->children ?? [] as $child) {
+            if (($src = self::firstImage($child)) !== null) {
+                return $src;
+            }
+        }
+        return null;
+    }
+
+    // $ref against the page's address $base (http or https, ending in "/"): absolute http(s) URLs
+    // as they are, paths from the site root and relative paths resolved; anything else is null.
+    public static function resolveUrl(string $base, string $ref): ?string
+    {
+        if (preg_match('#^https?://[^\s"<>]+$#D', $ref) === 1) {
+            return $ref;
+        }
+        if ($ref === '' || preg_match('#^[a-zA-Z][a-zA-Z0-9+.-]*:|^//|[\s"<>\\\\]#', $ref) === 1 || preg_match('#^(https?://[^/]+)(/.*)$#D', $base, $b) !== 1) {
+            return null;
+        }
+        [, $origin, $basePath] = $b;
+        $suffix = '';
+        if (preg_match('/^([^?#]*)([?#].*)$/sD', $ref, $parts) === 1) {
+            [, $ref, $suffix] = $parts;
+        }
+        $segments = str_starts_with($ref, '/') ? [] : explode('/', substr($basePath, 1, (int) strrpos($basePath, '/')));
+        array_pop($segments);
+        foreach (explode('/', ltrim($ref, '/')) as $segment) {
+            if ($segment === '..') {
+                array_pop($segments);
+            } elseif ($segment !== '.') {
+                $segments[] = $segment;
+            }
+        }
+        return $origin . '/' . implode('/', $segments) . $suffix;
+    }
+
     // The blog's contents page and feed, from the published posts (blog.md).
     private function writeBlog(): void
     {
@@ -379,7 +464,7 @@ final class Api
             return;
         }
         $posts = array_map(
-            static fn (array $p): array => ['id' => $p['id'], 'title' => $p['title'], 'date' => $p['date'] ?? '1970-01-01'],
+            static fn (array $p): array => ['id' => $p['id'], 'title' => $p['title'], 'date' => $p['date'] ?? '1970-01-01', 'description' => $p['description']],
             $this->listPages(true),
         );
         try {

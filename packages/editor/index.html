@@ -16,6 +16,12 @@
     <input id="page-title" maxlength="120" autocomplete="off" title="題名（一覧とブラウザのタブに出ます）">
     <label class="sr-only" for="page-date">日付</label>
     <input id="page-date" type="date" title="記事の日付（一覧はこの順に並びます）">
+    <button type="button" id="page-description-open" popovertarget="page-description-pop" title="検索結果や SNS で題名の下に出る文">説明文</button>
+    <div popover id="page-description-pop" class="description-pop">
+      <label for="page-description">説明文</label>
+      <textarea id="page-description" rows="4" maxlength="300" placeholder="記事の内容を 1〜2 文で。検索結果や SNS で題名の下に出ます"></textarea>
+      <p class="description-count" id="page-description-count" aria-live="polite"></p>
+    </div>
   </div>
   <div class="group" role="group" aria-label="操作の履歴">
     <button type="button" id="undo" title="元に戻す (Ctrl+Z)">元に戻す</button>

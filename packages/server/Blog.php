@@ -31,16 +31,17 @@ final class Blog
     /**
      * The files to write, by name in the site folder. $posts are the published posts, newest first.
      *
-     * @param list<array{id: string, title: string, date: string}> $posts
+     * @param list<array{id: string, title: string, date: string, description?: string}> $posts
      * @return array<string, string|null> null removes the file
      */
     public function files(array $posts): array
     {
-        $html = $this->renderer->renderPage($this->format->parse($this->contentsSource($posts)), $this->title, 'ja', 'style.css');
+        $head = $this->siteUrl === null ? [] : ['url' => rtrim($this->siteUrl, '/') . '/', 'type' => 'website', 'siteName' => $this->title];
+        $html = $this->renderer->renderPage($this->format->parse($this->contentsSource($posts)), $this->title, 'ja', 'style.css', false, $head);
         return ['index.html' => $html, 'feed.xml' => $this->feed($posts)];
     }
 
-    /** @param list<array{id: string, title: string, date: string}> $posts */
+    /** @param list<array{id: string, title: string, date: string, description?: string}> $posts */
     public function contentsSource(array $posts): string
     {
         $lines = ['<Section padding="lg" width="narrow">', '  <Stack gap="lg">', '    <Heading level="1">' . self::text($this->title) . '</Heading>'];
@@ -58,7 +59,7 @@ final class Blog
         return implode("\n", $lines) . "\n";
     }
 
-    /** @param list<array{id: string, title: string, date: string}> $posts */
+    /** @param list<array{id: string, title: string, date: string, description?: string}> $posts */
     public function feed(array $posts): ?string
     {
         if ($this->siteUrl === null) {
@@ -70,7 +71,8 @@ final class Blog
         foreach (array_slice($posts, 0, 50) as $post) {
             $link = $base . $post['id'] . '/';
             $at = new \DateTimeImmutable($post['date'] . ' 00:00:00', new \DateTimeZone($this->timeZone));
-            $out[] = '<item><title>' . $x($post['title']) . '</title><link>' . $x($link) . '</link><guid>' . $x($link) . '</guid><pubDate>' . $at->format(DATE_RSS) . '</pubDate></item>';
+            $description = ($post['description'] ?? '') !== '' ? '<description>' . $x($post['description']) . '</description>' : '';
+            $out[] = '<item><title>' . $x($post['title']) . '</title><link>' . $x($link) . '</link><guid>' . $x($link) . '</guid><pubDate>' . $at->format(DATE_RSS) . '</pubDate>' . $description . '</item>';
         }
         $out[] = '</channel>';
         $out[] = '</rss>';

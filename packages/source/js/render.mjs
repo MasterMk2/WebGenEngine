@@ -17,6 +17,36 @@ const BREAKPOINT = /^[0-9]+(\.[0-9]+)?(rem|em|px)$/;
 const COLOR = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 const FONT = /^[A-Za-z0-9 ,"-]{1,200}$/;
 const LANG = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
+const ABSOLUTE_URL = /^https?:\/\/[^\s"<>]+$/;
+const HEAD_KEYS = ['description', 'url', 'image', 'type', 'siteName'];
+
+// The description and the page's address for search and sharing (rendering.md §5).
+function headLines(title, head) {
+  const has = (k) => Object.prototype.hasOwnProperty.call(head, k) && head[k] !== null && head[k] !== undefined;
+  for (const k of [...HEAD_KEYS, ...Object.keys(head)]) {
+    if (!HEAD_KEYS.includes(k)) throw new RenderError('E_HEAD', `head.${k}`, '知らない項目です');
+    if (!has(k)) continue;
+    const v = head[k];
+    const ok = k === 'url' || k === 'image' ? typeof v === 'string' && ABSOLUTE_URL.test(v)
+      : k === 'type' ? v === 'website' || v === 'article'
+        : typeof v === 'string';
+    if (!ok) throw new RenderError('E_HEAD', `head.${k}`, '使えない値です');
+  }
+  const meta = (attr, name, content) => `<meta ${attr}="${name}" content="${escapeAttr(content)}">`;
+  const description = has('description') ? head.description : '';
+  const lines = [];
+  if (description !== '') lines.push(meta('name', 'description', description));
+  if (!has('url')) return lines;
+  lines.push(`<link rel="canonical" href="${escapeAttr(head.url)}">`);
+  lines.push(meta('property', 'og:type', has('type') ? head.type : 'website'));
+  lines.push(meta('property', 'og:title', title));
+  lines.push(meta('property', 'og:url', head.url));
+  if (has('siteName') && head.siteName !== '') lines.push(meta('property', 'og:site_name', head.siteName));
+  if (description !== '') lines.push(meta('property', 'og:description', description));
+  if (has('image')) lines.push(meta('property', 'og:image', head.image));
+  lines.push(meta('name', 'twitter:card', has('image') ? 'summary_large_image' : 'summary'));
+  return lines;
+}
 
 function escapeText(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -129,7 +159,7 @@ export function createRenderer(schema, theme, baseCss) {
       .join('');
   }
 
-  function renderPage(doc, { title, lang = 'ja', stylesheetHref = 'style.css', trustRaw = false }) {
+  function renderPage(doc, { title, lang = 'ja', stylesheetHref = 'style.css', trustRaw = false, head = {} }) {
     if (!LANG.test(lang)) throw new RenderError('E_LANG', 'lang', '使えない言語コードです');
     return [
       '<!doctype html>',
@@ -138,6 +168,7 @@ export function createRenderer(schema, theme, baseCss) {
       '<meta charset="utf-8">',
       '<meta name="viewport" content="width=device-width, initial-scale=1">',
       `<title>${escapeText(title)}</title>`,
+      ...headLines(title, head),
       `<link rel="stylesheet" href="${escapeAttr(stylesheetHref)}">`,
       '</head>',
       '<body>',

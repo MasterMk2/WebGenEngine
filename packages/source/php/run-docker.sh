@@ -5,7 +5,8 @@ set -eu
 cd "$(dirname "$0")/.."
 status=0
 for image in "${@:-php:8.3-apache}"; do
-  docker run --rm -v "$PWD":/w:ro -w /w "$image" \
+  # --pull never: a missing image is an error here, never a download.
+  docker run --rm --pull never -v "$PWD":/w:ro -w /w "$image" \
     php -d error_reporting=-1 -d display_errors=1 php/run-fixtures.php || status=1
 done
 exit $status

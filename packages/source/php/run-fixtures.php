@@ -205,7 +205,7 @@ function runRenderCase(SourceFormat $fmt, array $schema, array $defaultTheme, st
             }
             if (isset($c['page'])) {
                 $p = $c['page'];
-                $page = $renderer->renderPage($doc, $p['title'], $p['lang'] ?? 'ja', $p['stylesheetHref'] ?? 'style.css', $trustRaw);
+                $page = $renderer->renderPage($doc, $p['title'], $p['lang'] ?? 'ja', $p['stylesheetHref'] ?? 'style.css', $trustRaw, $p['head'] ?? []);
                 if (isset($c['pageHtml'])) {
                     $check($page === $c['pageHtml'], 'page', $page, $c['pageHtml']);
                 }

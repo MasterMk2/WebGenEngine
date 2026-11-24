@@ -280,7 +280,7 @@ $site = sys_get_temp_dir() . '/wge-test-blog-' . bin2hex(random_bytes(4));
 $format = SourceFormat::fromSchemaFile($packages . '/source/schema.json');
 $renderer = Renderer::fromFiles($packages . '/source');
 $blogDb = PageStore::openDatabase('sqlite::memory:');
-$blogApi = new Api($blogDb, $site, $format, $renderer, blog: new Blog('合成のお知らせ', $format, $renderer, 'https://site.example/blog/'));
+$blogApi = new Api($blogDb, $site, $format, $renderer, siteUrl: 'https://site.example/blog/', blog: new Blog('合成のお知らせ', $format, $renderer, 'https://site.example/blog/'));
 $bpost = static fn (string $path, array $body) => $blogApi->handle('POST', $path, json_encode($body), $json);
 $post = "<Section padding=\"lg\" width=\"narrow\">\n  <Heading level=\"1\">合成の記事</Heading>\n</Section>\n";
 
@@ -292,10 +292,15 @@ check($status === 404, 'with a blog, "top" is its contents page and cannot be ed
 check($status === 200 && $body['pages'] === [], 'no pages at first');
 
 [$status, $body] = $bpost('/api/pages/20261123-a1b2/load', ['initialSource' => $post, 'meta' => ['title' => '合成の記事 <b>&"', 'date' => '2026-11-23']]);
-check($status === 200 && $body['meta'] === ['title' => '合成の記事 <b>&"', 'date' => '2026-11-23'], 'a new post comes with its title and date');
+check($status === 200 && $body['meta'] === ['title' => '合成の記事 <b>&"', 'date' => '2026-11-23', 'description' => ''], 'a new post comes with its title and date');
 foreach ([[['title' => '', 'date' => '2026-11-23'], 'invalid-title'], [['title' => "二\n行", 'date' => '2026-11-23'], 'invalid-title'], [['title' => str_repeat('長', 121), 'date' => '2026-11-23'], 'invalid-title'], [['title' => '題', 'date' => '2026-02-30'], 'invalid-date'], [['title' => '題', 'date' => '23/11/2026'], 'invalid-date']] as [$meta, $reason]) {
     [$status, $body] = $bpost('/api/pages/20261123-a1b2/meta', $meta);
     check($status === 422 && $body['reason'] === $reason, "a bad title or date is refused: {$reason} " . json_encode($meta, JSON_UNESCAPED_UNICODE));
+}
+foreach (["二
+行", str_repeat('長', 301), 3] as $bad) {
+    [$status, $body] = $bpost('/api/pages/20261123-a1b2/meta', ['title' => '題', 'date' => '2026-11-23', 'description' => $bad]);
+    check($status === 422 && $body['reason'] === 'invalid-description', 'a bad description is refused: ' . json_encode($bad, JSON_UNESCAPED_UNICODE));
 }
 [$status] = $bpost('/api/pages/missing/meta', ['title' => '題', 'date' => '2026-11-23']);
 check($status === 404, 'a title for a page not loaded is refused');
@@ -313,6 +318,49 @@ check(str_contains($feed, '<link>https://site.example/blog/20261123-a1b2/</link>
 [$status] = $bpost('/api/pages/20261101-c3d4/publish', ['revision' => 0]);
 $contents = (string) @file_get_contents($site . '/index.html');
 check(strpos($contents, '20261123-a1b2/') < strpos($contents, '20261101-c3d4/'), 'the contents page lists the newest post first');
+
+// A description, and the tags for sharing (blog.md §5).
+check(str_contains($contents, '<link rel="canonical" href="https://site.example/blog/">') && str_contains($contents, '<meta property="og:site_name" content="合成のお知らせ">') && str_contains($contents, '<meta property="og:type" content="website">'), 'the contents page has its address for sharing');
+$withImage = "<Section padding=\"lg\" width=\"narrow\">
+  <Heading level=\"1\">合成の記事</Heading>
+  <Image src=\"../media/0123456789abcdef.png\" alt=\"合成\" />
+  <Image src=\"https://other.example/b.png\" alt=\"二枚目\" />
+</Section>
+";
+[, $body] = $bpost('/api/pages/20261123-a1b2/draft', ['source' => $withImage, 'baseRevision' => 0]);
+[$status, $body] = $bpost('/api/pages/20261123-a1b2/meta', ['title' => '合成の記事 <b>&"', 'date' => '2026-11-23', 'description' => '  合成の説明 <i>&"  ']);
+check($status === 200 && $body['meta']['description'] === '合成の説明 <i>&"', 'a description is kept, trimmed');
+[$status] = $bpost('/api/pages/20261123-a1b2/publish', ['revision' => 1]);
+$page = (string) @file_get_contents($site . '/20261123-a1b2/index.html');
+check(str_contains($page, '<meta name="description" content="合成の説明 &lt;i&gt;&amp;&quot;">') && str_contains($page, '<meta property="og:description" content="合成の説明 &lt;i&gt;&amp;&quot;">'), 'a post has its description, escaped');
+check(str_contains($page, '<link rel="canonical" href="https://site.example/blog/20261123-a1b2/">') && str_contains($page, '<meta property="og:type" content="article">') && str_contains($page, '<meta property="og:image" content="https://site.example/blog/media/0123456789abcdef.png">') && str_contains($page, 'summary_large_image'), "a post's address and first picture are written for sharing");
+[$status, $body] = $bpost('/api/pages/20261123-a1b2/meta', ['title' => '合成の記事 <b>&"', 'date' => '2026-11-23']);
+check($status === 200 && $body['meta']['description'] === '合成の説明 <i>&"', 'a title change without a description keeps it');
+$feed = (string) @file_get_contents($site . '/feed.xml');
+check(str_contains($feed, '<description>合成の説明 &lt;i&gt;&amp;&quot;</description></item>'), 'the feed has the description');
+[, $body] = $blogApi->handle('GET', '/api/pages', '', []);
+check(array_column($body['pages'], 'description', 'id')['20261123-a1b2'] === '合成の説明 <i>&"', 'the list has the description');
+foreach ([['https://s.example/a/b/', '../media/x.png', 'https://s.example/a/media/x.png'], ['https://s.example/a/b/', '/m/x.png?v=1', 'https://s.example/m/x.png?v=1'], ['https://s.example/', 'x.png', 'https://s.example/x.png'], ['https://s.example/', '../../x.png', 'https://s.example/x.png'], ['https://s.example/a/', 'https://cdn.example/x.png', 'https://cdn.example/x.png'], ['https://s.example/a/', 'javascript:alert(1)', null], ['https://s.example/a/', '//evil.example/x.png', null], ['https://s.example/a/', 'a b.png', null]] as [$base, $ref, $want]) {
+    check(Api::resolveUrl($base, $ref) === $want, "a picture's address is resolved: {$ref}");
+}
+// A database made before the description gets the column, keeping its rows.
+$oldFile = sys_get_temp_dir() . '/wge-test-old-' . bin2hex(random_bytes(4)) . '.sqlite';
+$old = new PDO('sqlite:' . $oldFile);
+$old->exec("CREATE TABLE pages (id TEXT PRIMARY KEY, draft_source TEXT NOT NULL, draft_revision INTEGER NOT NULL, draft_saved_at INTEGER, published INTEGER, next_id INTEGER NOT NULL)");
+$old->exec("CREATE TABLE page_meta (id TEXT PRIMARY KEY REFERENCES pages(id), title TEXT NOT NULL, date TEXT NOT NULL)");
+$old->exec("INSERT INTO pages VALUES ('20261101-0000', '', 0, NULL, NULL, 1)");
+$old->exec("INSERT INTO page_meta VALUES ('20261101-0000', '合成の古い題', '2026-11-01')");
+$old = null;
+$oldApi = new Api(PageStore::openDatabase('sqlite:' . $oldFile), $site, $format, $renderer, blog: new Blog('合成', $format, $renderer));
+[, $body] = $oldApi->handle('GET', '/api/pages', '', []);
+check(($body['pages'][0]['title'] ?? null) === '合成の古い題' && $body['pages'][0]['description'] === '', 'an older database gets the description column');
+$oldApi = null;
+gc_collect_cycles();
+@unlink($oldFile);
+// Back to the post's first published version, as before the description.
+[, $versions] = $blogApi->handle('GET', '/api/pages/20261123-a1b2/versions', '', []);
+[$status] = $bpost('/api/pages/20261123-a1b2/undo-publish', ['versionId' => array_values(array_filter($versions['versions'], static fn (array $v) => $v['live']))[0]['id']]);
+check($status === 200, 'the second publish is taken back');
 [$status, $body] = $bpost('/api/pages/20261101-c3d4/meta', ['title' => '合成の改めた題', 'date' => '2026-12-01']);
 $contents = (string) @file_get_contents($site . '/index.html');
 check($status === 200 && str_contains($contents, '合成の改めた題') && strpos($contents, '20261101-c3d4/') < strpos($contents, '20261123-a1b2/'), 'a new title or date rewrites the contents page');
@@ -379,6 +427,13 @@ foreach (['<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></sv
 check($status === 413 && $body['reason'] === 'too-large', 'an image over the limit is refused');
 [$status] = $bpost('/api/media', ['data' => '***']);
 check($status === 400, 'data that is not base64 is a bad request');
+// A PNG whose header says 640×360 (a header only, made here; no real photo).
+$ihdr = 'IHDR' . pack('NNCCCCC', 640, 360, 8, 2, 0, 0, 0);
+$sized = "\x89PNG\r\n\x1A\n" . pack('N', 13) . $ihdr . pack('N', crc32($ihdr));
+[$status, $body] = $bpost('/api/media', ['data' => base64_encode($sized)]);
+check($status === 200 && ($body['width'] ?? null) === 640 && ($body['height'] ?? null) === 360, 'a saved image comes back with its width and height');
+[, $body] = $bpost('/api/media', ['data' => base64_encode($png)]);
+check(!array_key_exists('width', $body) && !array_key_exists('height', $body), 'an image whose size cannot be read comes back without one');
 check(Api::imageType('RIFF' . "\0\0\0\0" . 'WEBPVP8 ') === 'webp' && Api::imageType("GIF89a\0") === 'gif' && Api::imageType("\xFF\xD8\xFF\xE0") === 'jpg', 'WebP, GIF and JPEG are told by their bytes');
 
 $mediaFront = new Front(new SvcAuth($key, 'front-app', $blogDb, static function () use (&$clock): int {

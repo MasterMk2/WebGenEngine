@@ -70,6 +70,7 @@ wsl -d Ubuntu -- sh packages/server/run-dev.sh
 
 - 保存したものは `packages/server/data/`（Git の対象外）に置く。中身は `wge.sqlite` と、公開用の `site/`
 - 公開したページは `http://127.0.0.1:8766/site/`
+- ブログとして試すときは、3 つ目の引数にブログの名前を渡す（`sh packages/server/run-dev.sh php:8.3-apache 8767 合成のブログ`）。データは `packages/server/data/blog/` に分けて置く。アプリ内のブラウザでは `editor-blog`（2026-11-24）
 - 止めても残ったときは `wsl -d Ubuntu -- docker rm -f wge-dev`
 - 既定のイメージは `php:8.3-apache`（中の CLI の組み込みサーバーを使う）。`--pull never` を付けているので、手元にないイメージを勝手に取りに行かない
 

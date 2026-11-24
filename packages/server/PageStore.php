@@ -54,8 +54,14 @@ final class PageStore
         $db->exec('CREATE TABLE IF NOT EXISTS page_meta (
             id TEXT PRIMARY KEY REFERENCES pages(id),
             title TEXT NOT NULL,
-            date TEXT NOT NULL
+            date TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT \'\'
         )');
+        // Databases made before the description (2026-11-24) get the column.
+        $columns = array_column($db->query('PRAGMA table_info(page_meta)')->fetchAll(PDO::FETCH_ASSOC), 'name');
+        if (!in_array('description', $columns, true)) {
+            $db->exec("ALTER TABLE page_meta ADD COLUMN description TEXT NOT NULL DEFAULT ''");
+        }
         // Pages taken off the list ("削除", blog.md §2). The page's rows stay, so it can be restored.
         $db->exec('CREATE TABLE IF NOT EXISTS deleted_pages (
             id TEXT PRIMARY KEY REFERENCES pages(id),

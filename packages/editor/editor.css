@@ -230,6 +230,11 @@ button.danger { color: var(--danger); }
 .page-meta input { padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
 .page-meta input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 #page-title { width: min(28em, 60vw); font-weight: 600; }
+#page-description-open.filled::after { content: " ✓"; color: var(--ok); }
+.description-pop { width: min(28em, 90vw); padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: inherit; box-shadow: 0 6px 24px rgb(0 0 0 / 0.15); }
+.description-pop label { display: block; font-weight: 600; margin-bottom: 6px; }
+.description-pop textarea { box-sizing: border-box; width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; font: inherit; resize: vertical; background: var(--panel); color: inherit; }
+.description-count { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
 .field .upload { margin-top: 6px; }
 
 /* The list of posts (posts.html) */
