@@ -27,6 +27,8 @@ final class Renderer
     private const FONT = '/^[A-Za-z0-9 ,"-]{1,200}$/D';
     private const LANG = '/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/D';
     private const ABSOLUTE_URL = '#^https?://[^\s"<>]+$#D';
+    /** A font's stylesheet (theme.font.stylesheet): https only, and no quote, space or angle bracket. */
+    private const FONT_STYLESHEET = '{^https://[a-z0-9.-]+(:[0-9]+)?/[A-Za-z0-9._~:/?#@!$&()*+,;=%-]*$}D';
     private const HEAD_KEYS = ['description', 'url', 'image', 'type', 'siteName'];
 
     /** @var array<string, array> */
@@ -73,7 +75,8 @@ final class Renderer
         return is_array($v) && ($v === [] || !array_is_list($v));
     }
 
-    private static function checkGroup(array $theme, string $group, array $keys, string $re): void
+    /** @param array<string, string> $optional keys that may be left out, each with its own pattern */
+    private static function checkGroup(array $theme, string $group, array $keys, string $re, array $optional = []): void
     {
         $values = $theme[$group] ?? null;
         if (!self::isObject($values)) {
@@ -87,8 +90,16 @@ final class Renderer
                 throw new RenderError('E_THEME', "{$group}.{$k}", '使えない値です');
             }
         }
+        foreach ($optional as $k => $okRe) {
+            if (!array_key_exists($k, $values)) {
+                continue;
+            }
+            if (!is_string($values[$k]) || preg_match($okRe, $values[$k]) !== 1) {
+                throw new RenderError('E_THEME', "{$group}.{$k}", '使えない値です');
+            }
+        }
         foreach (array_keys($values) as $k) {
-            if (!in_array((string) $k, $keys, true)) {
+            if (!in_array((string) $k, $keys, true) && !array_key_exists((string) $k, $optional)) {
                 throw new RenderError('E_THEME', "{$group}.{$k}", '使えない項目です');
             }
         }
@@ -113,7 +124,7 @@ final class Renderer
         self::checkScalar($theme, 'radius', self::LENGTH);
         self::checkScalar($theme, 'breakpoint', self::BREAKPOINT);
         self::checkGroup($theme, 'color', $schema['theme']['color'], self::COLOR);
-        self::checkGroup($theme, 'font', ['body'], self::FONT);
+        self::checkGroup($theme, 'font', ['body'], self::FONT, ['stylesheet' => self::FONT_STYLESHEET]);
         $known = ['space', 'fontSize', 'width', 'radius', 'breakpoint', 'color', 'font'];
         foreach (array_keys($theme) as $k) {
             if (!in_array((string) $k, $known, true)) {
@@ -243,6 +254,8 @@ final class Renderer
             '<meta name="viewport" content="width=device-width, initial-scale=1">',
             '<title>' . self::escapeText($title) . '</title>',
             ...$this->headLines($title, $head),
+            // The theme's font, before the site's own stylesheet (rendering.md §4).
+            ...(isset($this->theme['font']['stylesheet']) ? ['<link rel="stylesheet" href="' . self::escapeAttr($this->theme['font']['stylesheet']) . '">'] : []),
             '<link rel="stylesheet" href="' . self::escapeAttr($stylesheetHref) . '">',
             '</head>',
             '<body>',

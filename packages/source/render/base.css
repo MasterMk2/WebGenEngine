@@ -147,6 +147,13 @@ h3.wge-heading { font-size: 1.125rem; }
 .wge-post-head + .wge-section { padding-block-start: var(--wge-space-xs); }
 .wge-post-head ~ .wge-section:not(.wge-bg-primary, .wge-bg-inverse) h2.wge-heading { margin-block-start: var(--wge-space-md); padding-block-end: 0.5rem; border-block-end: 2px solid var(--wge-color-primary); color: var(--wge-color-primary); }
 .wge-post-head ~ .wge-section .wge-image { border-radius: var(--wge-radius); }
+/* A post reads as running text: more room between its lines, and a little larger on a computer. */
+.wge-post-head ~ .wge-section .wge-text:not(.wge-size-sm) { line-height: 1.9; }
+.wge-post-head ~ .wge-section .wge-text:not(.wge-size-sm, .wge-size-lg) { font-size: clamp(1rem, 0.95rem + 0.25vw, 1.0625rem); }
+/* The contents page's band (the section right before the list): the blog's name in the main colour,
+   ruled off from the list. */
+.wge-page > .wge-section:has(+ .wge-posts) { border-block-end: 1px solid color-mix(in srgb, var(--wge-color-primary) 18%, var(--wge-color-background)); }
+.wge-page > .wge-section:has(+ .wge-posts):not(.wge-bg-primary, .wge-bg-inverse) h1.wge-heading { color: var(--wge-color-primary); }
 .wge-post-foot { padding-block-end: var(--wge-space-xl); }
 .wge-post-foot > div { display: flex; flex-wrap: wrap; gap: var(--wge-space-sm) var(--wge-space-md); padding-block-start: var(--wge-space-lg); border-block-start: 1px solid color-mix(in srgb, var(--wge-color-text) 18%, var(--wge-color-background)); }
 .wge-post-back { display: inline-flex; align-items: center; min-height: 2.75rem; padding: 0.5rem 1.375rem; border: 2px solid var(--wge-color-primary); border-radius: var(--wge-radius); color: var(--wge-color-primary); font-weight: 700; text-decoration: none; }
