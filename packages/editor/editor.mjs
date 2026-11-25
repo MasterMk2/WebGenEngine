@@ -27,12 +27,13 @@ const components = new Map(schema.components.map((c) => [c.name, c]));
 
 const NAMES = {
   Section: '区画', Stack: '並び', Grid: '格子', Heading: '見出し', Text: '文章', Button: 'ボタン', Image: '画像', Embed: '地図・埋め込み',
-  Table: '表', Row: '行', HeaderCell: '見出しのセル', Cell: 'セル', Html: 'HTML', document: 'ページ',
+  Table: '表', Row: '行', HeaderCell: '見出しのセル', Cell: 'セル', Nav: 'メニュー', NavLink: 'メニューの項目', Html: 'HTML', document: 'ページ',
 };
 const ATTRS = {
   padding: '上下の余白', background: '背景', width: '中身の幅', direction: '向き', align: '揃え', justify: '並びの配置',
   gap: '間隔', wrap: '折り返し', columns: '列の数', level: '見出しの段階', size: '文字の大きさ', href: 'リンク先',
   variant: '種類', src: '画像の場所', alt: '代わりの文', ratio: '縦横の比', surface: '囲み', scope: '何の見出しか',
+  'aria-label': 'メニューの名前（読み上げ用）', 'aria-current': '今いる所の印',
 };
 // Where one name means something else on a component (a picture's own size, not a layout width).
 const ATTRS_OF = { Image: { width: '元の幅（px）', height: '元の高さ（px）' }, Embed: { src: '埋め込む場所', title: '中身の説明（読み上げ用）' } };
@@ -40,7 +41,7 @@ const VALUES = {
   vertical: '縦', horizontal: '横', start: '先頭側', center: '中央', end: '末尾側', stretch: '伸ばす', between: '両端',
   true: 'する', false: 'しない', none: 'なし', subtle: '薄い色', primary: '主な色', inverse: '反転', secondary: '控えめ',
   narrow: '狭い', normal: '標準', wide: '広い', full: '全幅', auto: '元のまま', sm: '小', md: '中', lg: '大',
-  card: 'カード', notice: 'お知らせ枠', row: 'この行の見出し', col: 'この列の見出し',
+  card: 'カード', notice: 'お知らせ枠', row: 'この行の見出し', col: 'この列の見出し', page: '今いる所として目立たせる',
 };
 const TEMPLATES = {
   Section: { type: 'Section', props: { padding: 'lg' }, children: [] },
@@ -69,6 +70,10 @@ TEMPLATES.Table = { type: 'Table', props: {}, children: [headed('項目', '内�
 TEMPLATES.Row = headed('項目', '内容'); // replaced by a row shaped like the table's last (rowLike)
 TEMPLATES.HeaderCell = { type: 'HeaderCell', props: { scope: 'row' }, children: [{ type: 'text', value: '項目' }] };
 TEMPLATES.Cell = { type: 'Cell', props: {}, children: [{ type: 'text', value: '内容' }] };
+// A menu of links for a header or footer (rendering.md §7.6): three items to rename and point.
+const navItem = (words) => ({ type: 'NavLink', props: { href: '/' }, children: [{ type: 'text', value: words }] });
+TEMPLATES.Nav = { type: 'Nav', props: { 'aria-label': 'メインメニュー' }, children: [navItem('トップ'), navItem('項目'), navItem('項目')] };
+TEMPLATES.NavLink = navItem('項目');
 // The opening of a page (a hero): the page's title and what matters most on the main colour,
 // with two buttons. Only parts there already are; the theme's colour does the rest.
 TEMPLATES.Hero = { type: 'Section', props: { padding: 'lg', background: 'primary' }, children: [
@@ -684,7 +689,8 @@ function openLinkBox() {
   }
   const node = nodeAt(state.doc, ed.path);
   if (!linkAllowedIn(node?.type)) {
-    status(node?.type === 'Button' ? 'ボタンの文字の中にはリンクを置けません。ボタンのリンク先は、右の「リンク先」で変えます' : 'この部品の文字にはリンクを付けられません', 'error');
+    const own = { Button: 'ボタン', NavLink: 'メニューの項目' }[node?.type];
+    status(own ? `${own}の文字の中にはリンクを置けません。${own}のリンク先は、右の「リンク先」で変えます` : 'この部品の文字にはリンクを付けられません', 'error');
     return;
   }
   const sel = previewDoc().getSelection();
@@ -1145,7 +1151,7 @@ insertPoint.addEventListener('pointerleave', (e) => {
 
 // The menu lists the everyday blocks first; the boxes for layout come after a rule.
 // The parts of a table come last: in a table only a row fits, in a row only cells (the schema's rules).
-const MENU = [['Heading', 'Text', 'Image', 'Button'], ['Card', 'Notice', 'Embed', 'Table'], ['Hero', 'Section', 'Stack', 'Grid'], ['Row', 'HeaderCell', 'Cell']];
+const MENU = [['Heading', 'Text', 'Image', 'Button'], ['Card', 'Notice', 'Embed', 'Table'], ['Hero', 'Nav', 'Section', 'Stack', 'Grid'], ['NavLink', 'Row', 'HeaderCell', 'Cell']];
 let menuTarget = null;
 
 // Only what may stand in the target is offered (source-format.md §4.1).

@@ -71,5 +71,11 @@
   {"name": "table: a paragraph in a row", "source": "<Table>\n  <Row>\n    <Text>x</Text>\n  </Row>\n</Table>", "error": {"code": "E_NOT_ALLOWED_HERE", "line": 3, "column": 5}},
   {"name": "table: a row in a row", "source": "<Table>\n  <Row>\n    <Row />\n  </Row>\n</Table>", "error": {"code": "E_NOT_ALLOWED_HERE", "line": 3, "column": 5}},
   {"name": "table: a cell straight in a table", "source": "<Table><Cell>x</Cell></Table>", "error": {"code": "E_NOT_ALLOWED_HERE", "line": 1, "column": 8}},
-  {"name": "table: an unknown scope", "source": "<Table><Row><HeaderCell scope=\"all\">x</HeaderCell></Row></Table>", "error": {"code": "E_INVALID_VALUE", "line": 1, "column": 31}}
+  {"name": "table: an unknown scope", "source": "<Table><Row><HeaderCell scope=\"all\">x</HeaderCell></Row></Table>", "error": {"code": "E_INVALID_VALUE", "line": 1, "column": 31}},
+  {"name": "menu: an item outside a menu", "source": "<Stack>\n  <NavLink href=\"/\">x</NavLink>\n</Stack>", "error": {"code": "E_NOT_ALLOWED_HERE", "line": 2, "column": 3}},
+  {"name": "menu: a paragraph straight in a menu", "source": "<Nav>\n  <Text>x</Text>\n</Nav>", "error": {"code": "E_NOT_ALLOWED_HERE", "line": 2, "column": 3}},
+  {"name": "menu: a link inside an item", "source": "<Nav><NavLink href=\"/\"><Link href=\"/a\">x</Link></NavLink></Nav>", "error": {"code": "E_NOT_ALLOWED_HERE", "line": 1, "column": 24}},
+  {"name": "menu: an item needs its address", "source": "<Nav><NavLink>x</NavLink></Nav>", "error": {"code": "E_MISSING_ATTRIBUTE", "line": 1, "column": 6}},
+  {"name": "menu: only the page is marked as where one is", "source": "<Nav><NavLink href=\"/\" aria-current=\"true\">x</NavLink></Nav>", "error": {"code": "E_INVALID_VALUE", "line": 1, "column": 37}},
+  {"name": "menu: no unsafe address", "source": "<Nav><NavLink href=\"javascript:alert(1)\">x</NavLink></Nav>", "error": {"code": "E_UNSAFE_URL", "line": 1, "column": 20}}
 ]
