@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace WebGenEngine\Server;
 
+use WebGenEngine\Source\Document;
 use WebGenEngine\Source\Renderer;
 use WebGenEngine\Source\SourceFormat;
 
@@ -37,10 +38,11 @@ final class Blog
      * @param list<array{id: string, title: string, date: string, description?: string, image?: string|null}> $posts
      * @return array<string, string|null> null removes the file
      */
-    public function files(array $posts): array
+    public function files(array $posts, ?Document $header = null, ?Document $footer = null): array
     {
         $head = $this->siteUrl === null ? [] : ['url' => rtrim($this->siteUrl, '/') . '/', 'type' => 'website', 'siteName' => $this->title];
-        $html = $this->renderer->renderPage($this->format->parse($this->contentsSource()), $this->title, 'ja', 'style.css', false, $head);
+        // In a site (site.md §9) the contents page carries the site's header and footer, made for it.
+        $html = $this->renderer->renderPage($this->format->parse($this->contentsSource()), $this->title, 'ja', 'style.css', false, $head, $header, $footer);
         return ['index.html' => self::insertIntoMain($html, '', $this->contentsList($posts)), 'feed.xml' => $this->feed($posts)];
     }
 

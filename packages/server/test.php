@@ -735,6 +735,96 @@ foreach (['emb0' => ['embed.html', 'map/viewer.html?v=1'], 'emb1' => ['x/embed.h
 $siteApi = null;
 removeTree($siteDir);
 
+// ------------------------------------------------------- part 7: a site with a blog (site.md §9)
+
+// A blog as it was run before (blog.md): its folder is the site's blog/, with a post that has a picture.
+$sbDir = sys_get_temp_dir() . '/wge-test-siteblog-' . bin2hex(random_bytes(4));
+mkdir($sbDir . '/blog', 0775, true);
+mkdir($sbDir . '/css');
+file_put_contents($sbDir . '/index.html', 'not written by WGE');
+file_put_contents($sbDir . '/css/style.css', 'not written by WGE');
+$sbFile = sys_get_temp_dir() . '/wge-test-siteblog-' . bin2hex(random_bytes(4)) . '.sqlite';
+$sbDb = PageStore::openDatabase('sqlite:' . $sbFile);
+$asBlog = new Api($sbDb, $sbDir . '/blog', $format, $renderer, siteUrl: 'https://fest.example/blog/', blog: new Blog('合成のブログ', $format, $renderer, 'https://fest.example/blog/'));
+$bp = static fn (Api $api, string $path, array $body) => $api->handle('POST', $path, json_encode($body), $json);
+[, $media] = $bp($asBlog, '/api/media', ['data' => base64_encode("\x89PNG\r\n\x1A\n" . str_repeat("\1", 40))]);
+$pic = basename($media['src']);
+$postSource = "<Section>\n  <Text>合成の記事<Link href=\"/about.html\">について</Link></Text>\n  <Image src=\"../media/{$pic}\" alt=\"合成\" />\n</Section>\n";
+$bp($asBlog, '/api/pages/20261120-aaaa/load', ['initialSource' => $postSource, 'meta' => ['title' => '合成の記事', 'date' => '2026-11-20']]);
+$bp($asBlog, '/api/pages/20261120-aaaa/publish', ['revision' => 0]);
+$bp($asBlog, '/api/pages/20261121-bbbb/load', ['initialSource' => "<Text>下書き</Text>\n"]);
+check(is_file($sbDir . '/blog/20261120-aaaa/index.html') && is_file($sbDir . '/blog/media/' . $pic), 'the blog as it was: a post and its picture under its own folder');
+$asBlog = null;
+
+// The same data as a site with a blog: the pictures move to the site's media/ (as the move to it does).
+mkdir($sbDir . '/media');
+copy($sbDir . '/blog/media/' . $pic, $sbDir . '/media/' . $pic);
+$sb = new Api($sbDb, $sbDir, $format, $renderer, siteUrl: 'https://fest.example/', blog: new Blog('合成のブログ', $format, $renderer, 'https://fest.example/blog/'), site: new Site('合成の祭', $schema));
+$sbp = static fn (string $path, array $body) => $sb->handle('POST', $path, json_encode($body), $json);
+$sbr = static fn (string $path): string => (string) @file_get_contents($sbDir . '/' . $path);
+[, $body] = $sb->handle('GET', '/api/ping', '', []);
+check(($body['site'] ?? null) === true && ($body['blog'] ?? null) === true && $body['siteUrl'] === 'https://fest.example/', 'ping says a site with a blog');
+$rebuilt = $sb->rebuildSite();
+check($rebuilt === ['20261120-aaaa'], 'a rebuild writes the published post again: ' . json_encode($rebuilt));
+$post = $sbr('blog/20261120-aaaa/index.html');
+check(str_contains($post, 'src="../../media/' . $pic . '"') && str_contains($post, 'href="../../about.html"') && str_contains($post, 'href="../style.css"'), "a post's picture and links are made relative to blog/<id>/");
+check(str_contains($post, '<meta property="og:url" content="https://fest.example/blog/20261120-aaaa/">') && str_contains($post, '<meta property="og:image" content="https://fest.example/media/' . $pic . '">') && str_contains($post, 'og:site_name" content="合成のブログ"'), "a post's address and picture for sharing are where they are seen");
+check(str_contains($post, 'class="wge-post-head"') && str_contains($post, '<a href="../">‹ 合成のブログ</a>'), 'a post keeps its frame');
+$contents = $sbr('blog/index.html');
+check(str_contains($contents, 'href="20261120-aaaa/"') && str_contains($contents, 'src="../media/' . $pic . '"'), "the contents page lists the post, its picture from the site's media/");
+check(str_contains($sbr('blog/feed.xml'), '<link>https://fest.example/blog/20261120-aaaa/</link>') && is_file($sbDir . '/blog/style.css'), 'the feed links the post where it is seen');
+check($sbr('index.html') === 'not written by WGE' && $sbr('css/style.css') === 'not written by WGE' && !is_file($sbDir . '/style.css'), 'files WGE did not write stay, and no page of the site is written yet');
+check($sbr('sitemap.xml') === $sitemap(['https://fest.example/blog/', 'https://fest.example/blog/20261120-aaaa/']), 'the sitemap has the blog and its post');
+
+// The list: "pages" stay the blog's posts, as a front made for the blog reads them; the site's pages come apart.
+[, $body] = $sb->handle('GET', '/api/pages', '', []);
+check(array_column($body['pages'], 'id') === ['20261120-aaaa', '20261121-bbbb'] && array_unique(array_column($body['pages'], 'kind')) === ['post'] && !array_key_exists('path', $body['pages'][0]), 'the posts are the pages of the list, with no path');
+check(($body['sitePages'] ?? null) === [] && count($body['parts']) === 2, "the site's pages and parts come apart");
+
+// A page of the site, and a post: told by the path given when they are made.
+[$status, $body] = $sbp('/api/pages/about/load', ['initialSource' => "<Section>\n  <Heading level=\"1\">について</Heading>\n</Section>\n", 'meta' => ['title' => 'について', 'path' => 'about.html']]);
+check($status === 200 && $body['meta']['kind'] === 'page' && $body['meta']['path'] === 'about.html', 'a new page with a path is a page of the site');
+[$status, $body] = $sbp('/api/pages/20261122-cccc/load', ['initialSource' => "<Text>新しい記事</Text>\n", 'meta' => ['title' => '新しい記事', 'date' => '2026-11-22']]);
+check($status === 200 && $body['meta'] === ['title' => '新しい記事', 'date' => '2026-11-22', 'description' => '', 'kind' => 'post'], 'a new page with a date and no path is a post');
+[$status, $body] = $sbp('/api/pages/20261123-dddd/load', ['initialSource' => '', 'meta' => ['title' => '日付なし']]);
+check($status === 422 && $body['reason'] === 'invalid-date', 'a post needs its date');
+[$status, $body] = $sbp('/api/pages/20261122-cccc/meta', ['title' => '新しい記事', 'date' => '2026-11-22', 'path' => 'post.html']);
+check($status === 422 && $body['reason'] === 'invalid-path', 'a post is given no path afterwards');
+[$status, $body] = $sbp('/api/pages/top/load', ['initialSource' => "<Text>合成のトップ</Text>\n"]);
+check($status === 200 && $body['meta']['kind'] === 'page' && $body['meta']['path'] === 'index.html', 'the top page is the first page of the site, not the contents of the blog');
+[$status, $body] = $sbp('/api/pages/top/publish', ['revision' => 0]);
+check($status === 409 && $body['reason'] === 'path-occupied' && $sbr('index.html') === 'not written by WGE', 'the site\'s first page is not written over a file WGE did not write');
+[$status] = $sbp('/api/pages/about/publish', ['revision' => 0]);
+[$status2] = $sbp('/api/pages/20261122-cccc/publish', ['revision' => 0]);
+check($status === 200 && $status2 === 200 && str_contains($sbr('about.html'), '<title>について</title>') && str_contains($sbr('blog/20261122-cccc/index.html'), '新しい記事') && str_contains($sbr('blog/index.html'), 'href="20261122-cccc/"'), 'a page goes where its path says, a post under blog/');
+check(!is_file($sbDir . '/20261122-cccc.html') && is_file($sbDir . '/style.css'), 'a post is not written as a page of the site');
+check($sbr('sitemap.xml') === $sitemap(['https://fest.example/about.html', 'https://fest.example/blog/', 'https://fest.example/blog/20261122-cccc/', 'https://fest.example/blog/20261120-aaaa/']), 'the sitemap has the pages, then the blog and its posts, newest first');
+[, $body] = $sb->handle('GET', '/api/pages', '', []);
+check(array_column($body['pages'], 'id') === ['20261122-cccc', '20261120-aaaa', '20261121-bbbb'] && array_column($body['sitePages'], 'id') === ['top', 'about'] && $body['sitePages'][1]['livePath'] === 'about.html' && $body['sitePages'][1]['kind'] === 'page', 'the list has the posts by date and the pages by path');
+
+// The header goes on the pages and the posts, made relative to each.
+$sbp('/api/pages/part-header/load', ['initialSource' => "<Text><Link href=\"/\">合成の祭</Link></Text>\n"]);
+[$status] = $sbp('/api/pages/part-header/publish', ['revision' => 0]);
+check($status === 200 && str_contains($sbr('about.html'), '<a href="./">合成の祭</a>') && str_contains($sbr('blog/20261120-aaaa/index.html'), "<header class=\"wge-site-header\">\n  <p class=\"wge-text\"><a href=\"../../\">合成の祭</a></p>") && str_contains($sbr('blog/index.html'), '<a href="../">合成の祭</a>'), 'the header is on the pages, the posts and the contents page, relative to each');
+check($sbr('index.html') === 'not written by WGE', 'and not on a file WGE did not write');
+
+// Taking a post back, and deleting one: the posts stay apart from the pages.
+[, $versions] = $sb->handle('GET', '/api/pages/20261120-aaaa/versions', '', []);
+[$status] = $sbp('/api/pages/20261120-aaaa/undo-publish', ['versionId' => $versions['versions'][0]['id']]);
+check($status === 200 && !is_dir($sbDir . '/blog/20261120-aaaa') && !str_contains($sbr('blog/index.html'), '20261120-aaaa') && !str_contains($sbr('sitemap.xml'), '20261120-aaaa'), 'a post taken back leaves the blog, its contents and the sitemap');
+[$status] = $sbp('/api/pages/20261121-bbbb/delete', []);
+[, $body] = $sb->handle('GET', '/api/deleted-pages', '', []);
+check($status === 200 && array_column($body['pages'], 'id') === ['20261121-bbbb'] && $body['sitePages'] === [], 'a deleted post is listed with the posts');
+[$status] = $sbp('/api/pages/about/meta', ['title' => 'について', 'path' => '20261122-cccc.html']);
+check($status === 200, "a page may take a path like a post's id: posts have no path to take");
+
+$sb = null;
+$sbDb = null;
+gc_collect_cycles();
+@unlink($sbFile);
+removeTree($sbDir);
+
+
 foreach ($failures as $f) {
     echo "FAIL {$f}\n";
 }

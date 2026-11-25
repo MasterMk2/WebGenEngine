@@ -15,6 +15,8 @@ const WORDS = {
 };
 let words = WORDS.blog;
 let siteMode = false;
+// A site with a blog (site.md §9): the blog's posts and the site's pages, each in a list of its own.
+let withBlog = false;
 // Ids in use (pages, deleted pages and the parts), so a new page never takes another's.
 let taken = new Set([HEADER, FOOTER]);
 
@@ -47,19 +49,18 @@ const said = (res, fallback) => (typeof res.message === 'string' && res.message 
 
 // A site's page: where it is written now, and where it goes when next published.
 function pageState(page) {
-  if (!siteMode) return [dateLabel(page.date), page.published ? '公開中' : '下書き'].filter(Boolean).join('・');
+  if (!siteMode || page.kind === 'post') return [dateLabel(page.date), page.published ? '公開中' : '下書き'].filter(Boolean).join('・');
   if (!page.published) return '下書き';
   if (page.livePath && page.livePath !== page.path) return `公開中（${page.livePath}）・次の公開で移ります`;
   return '公開中';
 }
 
-function render(pages) {
-  const list = $('post-list');
+function render(pages, list = $('post-list'), empty = words.empty) {
   list.replaceChildren();
   if (pages.length === 0) {
     const li = document.createElement('li');
     li.className = 'empty';
-    li.textContent = words.empty;
+    li.textContent = empty;
     list.append(li);
     return;
   }
@@ -70,7 +71,7 @@ function render(pages) {
     a.textContent = page.title;
     const side = document.createElement('span');
     side.className = 'post-side';
-    if (siteMode) {
+    if (siteMode && page.kind !== 'post') {
       const path = document.createElement('code');
       path.className = 'post-path';
       path.textContent = page.path;
@@ -148,12 +149,14 @@ async function refresh() {
   const [listed, deleted] = await Promise.all([call('/pages'), call('/deleted-pages')]);
   if (listed.ok) {
     render(listed.pages);
+    if (withBlog) render(listed.sitePages ?? [], $('page-list'), WORDS.site.empty);
     if (Array.isArray(listed.parts)) renderParts(listed.parts);
   } else {
     status(said(listed, `${words.list}を読み込めませんでした。`), 'error');
   }
-  if (deleted.ok) renderDeleted(deleted.pages);
-  taken = new Set([HEADER, FOOTER, ...(listed.pages ?? []).map((p) => p.id), ...(deleted.pages ?? []).map((p) => p.id)]);
+  const gone = [...(deleted.pages ?? []), ...(deleted.sitePages ?? [])].sort((a, b) => b.deletedAt - a.deletedAt);
+  if (deleted.ok) renderDeleted(gone);
+  taken = new Set([HEADER, FOOTER, ...(listed.pages ?? []).map((p) => p.id), ...(listed.sitePages ?? []).map((p) => p.id), ...gone.map((p) => p.id)]);
   return listed.ok;
 }
 
@@ -200,11 +203,45 @@ function useSiteWords(siteName) {
   $('trash-label').textContent = '削除したページ';
 }
 
+// A site with a blog: the form makes a post or a page, the blog's posts are listed first (written
+// most often), then the site's pages and the parts.
+function useSiteWithBlog(siteName) {
+  siteMode = true;
+  withBlog = true;
+  $('site-name').textContent = siteName;
+  document.title = `${siteName} – 一覧`;
+  $('new-kind').hidden = false;
+  $('list-title').textContent = 'ブログの記事';
+  $('site-pages').hidden = false;
+  $('parts').hidden = false;
+  $('trash-label').textContent = '削除した記事とページ';
+  for (const radio of document.querySelectorAll('input[name="kind"]')) radio.addEventListener('change', showKind);
+  showKind();
+}
+
+const kindChosen = () => document.querySelector('input[name="kind"]:checked')?.value ?? 'post';
+
+// The fields of what is made: a post's date, or a page's path.
+function showKind() {
+  const page = kindChosen() === 'page';
+  words = page ? WORDS.site : WORDS.blog;
+  $('new-heading').textContent = page ? '新しいページ' : '新しい記事';
+  $('create').textContent = page ? '作る' : '書き始める';
+  $('new-date-field').hidden = page;
+  $('new-date').disabled = page;
+  $('new-path-field').hidden = !page;
+  $('new-path').disabled = !page;
+  $('new-path').required = page;
+  $('new-path-hint').hidden = !page;
+}
+
 const ping = await call('/ping');
 if (ping.ok === false) {
   status(said(ping, 'サーバーにつながりません。しばらくしてから開き直してください。'), 'error');
 } else {
-  if (ping.site === true && typeof ping.siteName === 'string') {
+  if (ping.site === true && ping.blog === true && typeof ping.siteName === 'string') {
+    useSiteWithBlog(ping.siteName);
+  } else if (ping.site === true && typeof ping.siteName === 'string') {
     useSiteWords(ping.siteName);
   } else if (typeof ping.blogTitle === 'string') {
     $('site-name').textContent = ping.blogTitle;
@@ -255,7 +292,7 @@ $('new-post').addEventListener('submit', async (event) => {
   }
   $('create').disabled = true;
   try {
-    if (siteMode) {
+    if (siteMode && (!withBlog || kindChosen() === 'page')) {
       await createPage(title);
       return;
     }

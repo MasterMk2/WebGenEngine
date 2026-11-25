@@ -81,9 +81,16 @@ final class Api
         }
         if ($method === 'GET' && $path === '/api/pages') {
             // A site's header and footer are listed apart from its pages (site.md §5).
+            if ($this->withBlog()) {
+                return self::reply(200, ['ok' => true, 'pages' => $this->listPages(false, 'post'), 'sitePages' => $this->listPages(false, 'page'), 'parts' => $this->listParts()]);
+            }
             return self::reply(200, ['ok' => true, 'pages' => $this->listPages(false)] + ($this->site !== null ? ['parts' => $this->listParts()] : []));
         }
         if ($method === 'GET' && $path === '/api/deleted-pages') {
+            if ($this->withBlog()) {
+                $deleted = $this->listDeleted();
+                return self::reply(200, ['ok' => true, 'pages' => array_values(array_filter($deleted, fn (array $p): bool => $this->isPost($p['id']))), 'sitePages' => array_values(array_filter($deleted, fn (array $p): bool => !$this->isPost($p['id'])))]);
+            }
             return self::reply(200, ['ok' => true, 'pages' => $this->listDeleted()]);
         }
         if ($path === '/api/media') {
@@ -98,7 +105,7 @@ final class Api
         }
         [, $pageId, $action] = $m;
         // With a blog, its contents page is made from the posts and never edited.
-        if ($this->blog !== null && $pageId === 'top') {
+        if ($this->blog !== null && $this->site === null && $pageId === 'top') {
             return self::reply(404, ['ok' => false, 'reason' => 'not-found']);
         }
         // A site's own parts are its header and footer only.
@@ -145,7 +152,9 @@ final class Api
                 if ($isPart && $meta !== null) {
                     return self::reply(409, ['ok' => false, 'reason' => 'part']);
                 }
-                if ($meta !== null && ($problem = $this->checkMeta($meta)) !== null) {
+                // In a site with a blog, a new page given no path is a post (site.md §9).
+                $post = $this->withBlog() && is_array($meta) && !array_key_exists('path', $meta) && $pageId !== 'top';
+                if ($meta !== null && ($problem = $this->checkMeta($meta, $post)) !== null) {
                     return $problem;
                 }
                 if ($meta !== null && $this->site !== null) {
@@ -153,19 +162,19 @@ final class Api
                     if ($this->metaOf($pageId) !== null) {
                         return self::reply(409, ['ok' => false, 'reason' => 'exists']);
                     }
-                    if (($problem = $this->checkPathFree($pageId, $meta['path'] ?? null)) !== null) {
+                    if (!$post && ($problem = $this->checkPathFree($pageId, $meta['path'] ?? null)) !== null) {
                         return $problem;
                     }
                 }
                 $state = $store->load($source);
                 if ($meta !== null && $this->metaOf($pageId) === null) {
-                    $this->setMeta($pageId, $meta['title'], $meta['date'] ?? '', $meta['description'] ?? '', $this->site !== null ? ($meta['path'] ?? null) : null);
+                    $this->setMeta($pageId, $meta['title'], $meta['date'] ?? '', $meta['description'] ?? '', $this->site !== null && !$post ? ($meta['path'] ?? null) : null);
                 }
                 // A site's page opened without its title yet (the top page, opened directly) gets the
                 // fields filled as it is written now, so its title and path can be set in the editor.
                 $kept = $this->metaOf($pageId);
-                if ($kept === null && $this->site !== null && !$isPart) {
-                    $kept = ['title' => self::TITLES[$pageId] ?? $pageId, 'date' => '', 'description' => '', 'path' => $this->pathOf($pageId), 'livePath' => $this->livePath($pageId)];
+                if ($kept === null && $this->site !== null && !$isPart && !$this->isPost($pageId)) {
+                    $kept = ['title' => self::TITLES[$pageId] ?? $pageId, 'date' => '', 'description' => '', 'path' => $this->pathOf($pageId), 'livePath' => $this->livePath($pageId)] + ($this->withBlog() ? ['kind' => 'page'] : []);
                 }
                 return self::reply(200, ['ok' => true] + $state + ['meta' => $kept]);
             case 'draft':
@@ -182,11 +191,12 @@ final class Api
                 if ($isPart) {
                     return self::reply(409, ['ok' => false, 'reason' => 'part']);
                 }
-                if (($problem = $this->checkMeta($input)) !== null) {
+                $post = $this->isPost($pageId);
+                if (($problem = $this->checkMeta($input, $post)) !== null) {
                     return $problem;
                 }
                 $published = $store->publishedSource();
-                $path = $this->site !== null ? ($input['path'] ?? null) : null;
+                $path = $this->site !== null && !$post ? ($input['path'] ?? null) : null;
                 if (($problem = $this->checkPathFree($pageId, $path)) !== null) {
                     return $problem;
                 }
@@ -205,7 +215,7 @@ final class Api
                     return self::reply(400, ['ok' => false, 'reason' => 'bad-request']);
                 }
                 // A site's page is not published over a file WGE did not write (site.md §4).
-                if ($this->site !== null && ($problem = $this->checkWritable($pageId)) !== null) {
+                if ($this->site !== null && !$this->isPost($pageId) && ($problem = $this->checkWritable($pageId)) !== null) {
                     return $problem;
                 }
                 $result = $store->publish($revision);
@@ -276,18 +286,18 @@ final class Api
 
     // A title of one line (1–120 characters) and a real date written YYYY-MM-DD. A site's page needs
     // no date, and may have a path (site.md §3).
-    private function checkMeta(mixed $meta): ?array
+    private function checkMeta(mixed $meta, bool $post = false): ?array
     {
         $title = is_array($meta) ? ($meta['title'] ?? null) : null;
         $date = is_array($meta) ? ($meta['date'] ?? null) : null;
         if (!is_string($title) || !mb_check_encoding($title, 'UTF-8') || trim($title) === '' || mb_strlen($title) > self::MAX_TITLE || preg_match('/[\x00-\x1f\x7f]/', $title) === 1) {
             return self::reply(422, ['ok' => false, 'reason' => 'invalid-title']);
         }
-        $noDate = $this->site !== null && ($date === null || $date === '');
+        $noDate = $this->site !== null && !$post && ($date === null || $date === '');
         if (!$noDate && (!is_string($date) || preg_match('/^(\d{4})-(\d{2})-(\d{2})$/D', $date, $d) !== 1 || !checkdate((int) $d[2], (int) $d[3], (int) $d[1]))) {
             return self::reply(422, ['ok' => false, 'reason' => 'invalid-date']);
         }
-        if ($this->site !== null && array_key_exists('path', $meta) && !Site::validPath($meta['path'])) {
+        if ($this->site !== null && array_key_exists('path', $meta) && ($post || !Site::validPath($meta['path']))) {
             return self::reply(422, ['ok' => false, 'reason' => 'invalid-path']);
         }
         // An optional description of one line, up to 300 characters; empty means none.
@@ -308,8 +318,14 @@ final class Api
             return null;
         }
         $meta = ['title' => (string) $row['title'], 'date' => (string) $row['date'], 'description' => (string) $row['description']];
+        if ($this->site === null) {
+            return $meta;
+        }
+        if ($this->isPost($pageId)) {
+            return $meta + ['kind' => 'post'];
+        }
         // A site's page: where it goes when next published, and where it is now (null: nowhere).
-        return $this->site !== null ? $meta + ['path' => $this->pathOf($pageId), 'livePath' => $this->livePath($pageId)] : $meta;
+        return $meta + ['path' => $this->pathOf($pageId), 'livePath' => $this->livePath($pageId)] + ($this->withBlog() ? ['kind' => 'page'] : []);
     }
 
     // A null description (or path) keeps the one stored (or none, for a new row).
@@ -319,6 +335,35 @@ final class Api
         $this->db->prepare('INSERT INTO page_meta (id, title, date, description, path) VALUES (?, ?, ?, COALESCE(?, \'\'), ?)
             ON CONFLICT(id) DO UPDATE SET title = excluded.title, date = excluded.date, description = COALESCE(?, page_meta.description), path = COALESCE(?, page_meta.path)')
             ->execute([$pageId, trim($title), $date, $description, $path, $description, $path]);
+    }
+
+    // ------------------------------------------------------------ a site with a blog (site.md §9)
+
+    private function withBlog(): bool
+    {
+        return $this->site !== null && $this->blog !== null;
+    }
+
+    /**
+     * In a site with a blog, whether $pageId is one of the blog's posts: neither the top page nor a
+     * part, and given no path (a site's page is given one when it is made, site.md §9). Decided
+     * here only; the list and the meta tell it as "kind".
+     */
+    private function isPost(string $pageId): bool
+    {
+        if (!$this->withBlog() || $pageId === 'top' || Site::isPart($pageId)) {
+            return false;
+        }
+        $q = $this->db->prepare('SELECT path FROM page_meta WHERE id = ?');
+        $q->execute([$pageId]);
+        $path = $q->fetchColumn();
+        return !is_string($path) || $path === '';
+    }
+
+    // Where the blog's files are: the site folder for a blog alone, its blog/ folder in a site.
+    private function blogDir(): string
+    {
+        return $this->withBlog() ? $this->siteDir . '/blog' : $this->siteDir;
     }
 
     // ------------------------------------------------------------ a site's paths (site.md §3, §4)
@@ -348,7 +393,7 @@ final class Api
             return null;
         }
         foreach ($this->db->query('SELECT id FROM pages')->fetchAll(PDO::FETCH_COLUMN) as $other) {
-            if ((string) $other !== $pageId && !Site::isPart((string) $other) && $this->pathOf((string) $other) === $path) {
+            if ((string) $other !== $pageId && !Site::isPart((string) $other) && !$this->isPost((string) $other) && $this->pathOf((string) $other) === $path) {
                 return self::reply(409, ['ok' => false, 'reason' => 'path-taken']);
             }
         }
@@ -428,13 +473,17 @@ final class Api
      *
      * @return list<array{id: string, title: string, date: string|null, description: string, published: bool, savedAt: int|null}>
      */
-    private function listPages(bool $publishedOnly): array
+    private function listPages(bool $publishedOnly, ?string $kind = null): array
     {
         $rows = $this->db->query('SELECT p.id, p.published, p.draft_saved_at, m.title, m.date, m.description FROM pages p LEFT JOIN page_meta m ON m.id = p.id
             WHERE p.id NOT IN (SELECT id FROM deleted_pages)')->fetchAll(PDO::FETCH_ASSOC);
         $pages = [];
         foreach ($rows as $r) {
-            if (($this->blog !== null && $r['id'] === 'top') || ($publishedOnly && $r['published'] === null) || ($this->site !== null && Site::isPart((string) $r['id']))) {
+            if (($this->blog !== null && $this->site === null && $r['id'] === 'top') || ($publishedOnly && $r['published'] === null) || ($this->site !== null && Site::isPart((string) $r['id']))) {
+                continue;
+            }
+            $post = $this->isPost((string) $r['id']);
+            if ($kind !== null && ($kind === 'post') !== $post) {
                 continue;
             }
             $page = [
@@ -446,9 +495,13 @@ final class Api
                 'savedAt' => $r['draft_saved_at'] !== null ? (int) $r['draft_saved_at'] : null,
             ];
             // A site's page: where it goes when next published, and where it is now (site.md §3).
-            $pages[] = $this->site !== null ? $page + ['path' => $this->pathOf($page['id']), 'livePath' => $this->livePath($page['id'])] : $page;
+            if ($post) {
+                $pages[] = $page + ['kind' => 'post'];
+            } else {
+                $pages[] = $this->site !== null ? $page + ['path' => $this->pathOf($page['id']), 'livePath' => $this->livePath($page['id'])] + ($this->withBlog() ? ['kind' => 'page'] : []) : $page;
+            }
         }
-        if ($this->site !== null) {
+        if ($this->site !== null && $kind !== 'post') {
             usort($pages, static fn (array $a, array $b): int => [$a['id'] !== 'top', $a['path']] <=> [$b['id'] !== 'top', $b['path']]);
             return $pages;
         }
@@ -558,7 +611,11 @@ final class Api
     private function writeSite(string $pageId, ?string $source, bool $move = false): void
     {
         if ($this->site !== null) {
-            $this->writeSitePage($pageId, $source, $move);
+            if ($this->isPost($pageId)) {
+                $this->writePost($pageId, $source);
+            } else {
+                $this->writeSitePage($pageId, $source, $move);
+            }
             $this->writeSitemap();
             return;
         }
@@ -577,7 +634,7 @@ final class Api
         $title = $meta['title'] ?? (self::TITLES[$pageId] ?? $pageId);
         try {
             $doc = $this->format->parse($source);
-            $html = $this->renderer->renderPage($doc, $title, 'ja', $pageId === 'top' ? 'style.css' : '../style.css', false, $this->pageHead($pageId, $doc, $meta['description'] ?? ''));
+            $html = $this->renderer->renderPage($doc, $title, 'ja', $pageId === 'top' ? 'style.css' : '../style.css', false, $this->pageHead($pageId, $doc, $meta['description'] ?? '', $this->siteUrl));
             // A post carries its date and the way back to the contents (blog.md §7).
             if ($this->blog !== null && $pageId !== 'top' && is_string($meta['date'] ?? null)) {
                 $html = $this->blog->framePost($html, $meta['date']);
@@ -589,6 +646,55 @@ final class Api
         }
         self::writeAtomically($this->siteDir . '/style.css', $this->renderer->stylesheet());
         self::writeAtomically($file, $html);
+    }
+
+    // A post of a site's blog (site.md §9), at blog/<id>/index.html: written as a blog writes its
+    // posts, with the site's header and footer, and its addresses from the site's root and its
+    // pictures (../media/…, the site's media) made relative to it, as a site's page two folders down.
+    private function writePost(string $pageId, ?string $source): void
+    {
+        $file = $this->blogDir() . '/' . $pageId . '/index.html';
+        if ($source === null) {
+            if (is_file($file)) {
+                unlink($file);
+            }
+            if (is_dir(dirname($file)) && (scandir(dirname($file)) ?: []) === ['.', '..']) {
+                rmdir(dirname($file));
+            }
+            return;
+        }
+        $meta = $this->metaOf($pageId);
+        $title = $meta['title'] ?? $pageId;
+        try {
+            $doc = $this->format->parse($source);
+            $this->site->relink($doc, 2);
+            $html = $this->renderer->renderPage($doc, $title, 'ja', '../style.css', false, $this->pageHead($pageId, $doc, $meta['description'] ?? '', $this->blogUrl()), $this->partOf(Site::HEADER, 2), $this->partOf(Site::FOOTER, 2));
+            if (is_string($meta['date'] ?? null) && $meta['date'] !== '') {
+                $html = $this->blog->framePost($html, $meta['date']);
+            }
+        } catch (SourceError | RenderError $e) {
+            error_log('wge: cannot render ' . $pageId . ': ' . $e->getMessage());
+            return;
+        }
+        self::writeAtomically($this->blogDir() . '/style.css', $this->renderer->stylesheet());
+        self::writeAtomically($file, $html);
+    }
+
+    // Every published post again (the header or footer changed, or a rebuild).
+    private function rewritePosts(): void
+    {
+        foreach ($this->listPages(true, 'post') as $post) {
+            $this->writePost($post['id'], (new PageStore($this->db, $post['id'], $this->now))->publishedSource());
+        }
+    }
+
+    // Where the blog is seen: the site's URL for a blog alone, its blog/ in a site.
+    private function blogUrl(): ?string
+    {
+        if ($this->siteUrl === null || !$this->withBlog()) {
+            return $this->siteUrl;
+        }
+        return rtrim($this->siteUrl, '/') . '/blog/';
     }
 
     /**
@@ -650,6 +756,9 @@ final class Api
     {
         if (Site::isPart($pageId)) {
             $this->rewriteAll();
+            if ($this->withBlog()) {
+                $this->rewritePosts();
+            }
             return;
         }
         $live = $this->livePath($pageId);
@@ -693,6 +802,12 @@ final class Api
         $paths = $this->db->query("SELECT path FROM site_files WHERE page != '' ORDER BY path")->fetchAll(PDO::FETCH_COLUMN);
         $paths = array_values(array_filter(array_map('strval', $paths), static fn (string $p): bool => str_ends_with($p, '.html')));
         usort($paths, static fn (string $a, string $b): int => [$a !== 'index.html', $a] <=> [$b !== 'index.html', $b]);
+        if ($this->withBlog() && is_file($this->blogDir() . '/index.html')) {
+            $paths[] = 'blog/index.html';
+            foreach ($this->listPages(true, 'post') as $post) {
+                $paths[] = 'blog/' . $post['id'] . '/index.html';
+            }
+        }
         if ($paths === []) {
             $this->removeOwned(self::SITEMAP);
             return;
@@ -724,13 +839,13 @@ final class Api
 
     // The description, and where the page is seen for sharing (blog.md §5): the address and the
     // first picture on the page need the site's URL, so without one only the description is written.
-    private function pageHead(string $pageId, Node $doc, string $description): array
+    private function pageHead(string $pageId, Node $doc, string $description, ?string $base): array
     {
         $head = ['description' => $description];
-        if ($this->siteUrl === null || preg_match('#^https?://[^\s"<>]+$#D', $this->siteUrl) !== 1) {
+        if ($base === null || preg_match('#^https?://[^\s"<>]+$#D', $base) !== 1) {
             return $head;
         }
-        $url = rtrim($this->siteUrl, '/') . '/' . ($pageId === 'top' ? '' : "{$pageId}/");
+        $url = rtrim($base, '/') . '/' . ($pageId === 'top' ? '' : "{$pageId}/");
         $head['url'] = $url;
         $head['type'] = $this->blog !== null ? 'article' : 'website';
         if ($this->blog !== null) {
@@ -753,15 +868,15 @@ final class Api
         } catch (SourceError) {
             return null;
         }
-        return $src === null ? null : self::contentsImageOf($src);
+        return $src === null ? null : self::contentsImageOf($src, $this->withBlog() ? '../' : '');
     }
 
     // A picture of a post, as written in it, seen from the contents page one folder up: one the
     // editor uploaded (../media/…) or an http(s) address. Anything else shows no picture.
-    public static function contentsImageOf(string $src): ?string
+    public static function contentsImageOf(string $src, string $up = ''): ?string
     {
         if (preg_match('#^\.\./(media/[0-9a-f]{16}\.(?:jpg|png|gif|webp))$#D', $src, $m) === 1) {
-            return $m[1];
+            return $up . $m[1];
         }
         return preg_match('#^https?://[^\s"<>]+$#D', $src) === 1 ? $src : null;
     }
@@ -817,6 +932,16 @@ final class Api
     {
         // A site of pages: each page WGE wrote, again where it is, with style.css (only files in
         // the ledger are touched, site.md §4).
+        if ($this->withBlog()) {
+            $this->rewriteAll();
+            $this->rewritePosts();
+            $this->writeBlog();
+            $this->writeSitemap();
+            return array_merge(
+                array_map('strval', $this->db->query("SELECT DISTINCT page FROM site_files WHERE page != '' ORDER BY page")->fetchAll(PDO::FETCH_COLUMN)),
+                array_column($this->listPages(true, 'post'), 'id'),
+            );
+        }
         if ($this->site !== null) {
             $this->rewriteAll();
             $this->writeSitemap();
@@ -842,22 +967,23 @@ final class Api
         }
         $posts = array_map(
             fn (array $p): array => ['id' => $p['id'], 'title' => $p['title'], 'date' => $p['date'] ?? '1970-01-01', 'description' => $p['description'], 'image' => $this->contentsImage($p['id'])],
-            $this->listPages(true),
+            $this->listPages(true, $this->withBlog() ? 'post' : null),
         );
         try {
-            $files = $this->blog->files($posts);
+            $files = $this->withBlog() ? $this->blog->files($posts, $this->partOf(Site::HEADER, 1), $this->partOf(Site::FOOTER, 1)) : $this->blog->files($posts);
         } catch (SourceError | RenderError $e) {
             error_log('wge: cannot render the blog contents: ' . $e->getMessage());
             return;
         }
-        self::writeAtomically($this->siteDir . '/style.css', $this->renderer->stylesheet());
+        $dir = $this->blogDir();
+        self::writeAtomically($dir . '/style.css', $this->renderer->stylesheet());
         foreach ($files as $name => $content) {
             if ($content === null) {
-                if (is_file($this->siteDir . '/' . $name)) {
-                    unlink($this->siteDir . '/' . $name);
+                if (is_file($dir . '/' . $name)) {
+                    unlink($dir . '/' . $name);
                 }
             } else {
-                self::writeAtomically($this->siteDir . '/' . $name, $content);
+                self::writeAtomically($dir . '/' . $name, $content);
             }
         }
     }

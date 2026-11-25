@@ -783,10 +783,12 @@ function fillLinkBox(href) {
 // The site's pages as choices for the address (the header and footer are not pages to open).
 async function fillPageChoices(input) {
   const res = await fetch('../api/pages', { cache: 'no-store' }).then((r) => r.json()).catch(() => null);
-  if (!res?.ok || !Array.isArray(res.pages) || linkBox.hidden) return;
+  const pages = Array.isArray(res?.sitePages) ? res.sitePages : res?.pages;
+  if (!res?.ok || !Array.isArray(pages) || linkBox.hidden) return;
   const list = document.createElement('datalist');
   list.id = 'link-pages';
-  for (const p of res.pages) {
+  if (Array.isArray(res.sitePages)) list.append(Object.assign(document.createElement('option'), { value: '/blog/', label: 'ブログ（記事の一覧）' }));
+  for (const p of pages) {
     if (isPart(p.id) || typeof p.path !== 'string') continue;
     const o = document.createElement('option');
     o.value = pageHref(p.path);
@@ -1530,6 +1532,8 @@ window.addEventListener('hashchange', () => location.reload());
 // A site of pages (site.md): its pages have a path instead of a date, and its header and footer
 // (part-header, part-footer) are edited here like a page. Set at start-up from /api/ping.
 let siteMode = false;
+// In a site with a blog (site.md §9), whether the page open is one of the blog's posts (the server's "kind").
+let postInSite = false;
 // Where a site's page goes when next published, and where it is written now (null: nowhere).
 const sitePaths = { path: null, livePath: null };
 // Replaced at start-up by the server's store when the editor is served with the PHP API
@@ -1664,7 +1668,7 @@ function showMeta(meta) {
   $('page-title').value = meta.title;
   $('page-date').value = meta.date;
   $('page-description').value = meta.description ?? '';
-  if (siteMode) {
+  if (siteMode && meta.kind !== 'post') {
     $('page-date').hidden = true;
     $('page-path').hidden = false;
     sitePaths.path = meta.path ?? null;
@@ -1678,7 +1682,7 @@ function showMeta(meta) {
 
 // "サイトを見る" opens where a site's page is written now (else where it will be).
 function siteAddress() {
-  SITE_URL = `${SITE_ROOT}${addressOf(sitePaths.livePath ?? sitePaths.path ?? 'index.html')}`;
+  SITE_URL = postInSite ? `${SITE_ROOT}blog/${pageId}/` : `${SITE_ROOT}${addressOf(sitePaths.livePath ?? sitePaths.path ?? 'index.html')}`;
   $('view-site').href = SITE_URL;
 }
 
@@ -1730,7 +1734,7 @@ async function saveSiteMeta() {
 }
 
 async function saveMeta() {
-  if (siteMode) {
+  if (siteMode && !postInSite) {
     await saveSiteMeta();
     return;
   }
@@ -2126,7 +2130,7 @@ if (ping?.wge === 1 && ping.ok === false) {
   throw new Error('the save API refused the editor');
 }
 // With a blog, "top" is the contents page the server makes: the list of posts opens instead.
-if (ping?.wge === 1 && ping.blog === true && pageId === 'top') {
+if (ping?.wge === 1 && ping.blog === true && ping.site !== true && pageId === 'top') {
   location.replace('posts.html');
   await new Promise(() => {});
 }
@@ -2137,7 +2141,7 @@ let SITE_URL = pageId === 'top' ? SITE_ROOT : `${SITE_ROOT}${pageId}/`;
 siteMode = ping?.wge === 1 && ping.site === true;
 const siteName = siteMode && typeof ping.siteName === 'string' ? ping.siteName : '';
 if (siteMode) {
-  $('posts-link').textContent = 'ページの一覧';
+  $('posts-link').textContent = ping.blog === true ? '一覧' : 'ページの一覧';
   if (isPart(pageId)) {
     SITE_URL = SITE_ROOT;
     const name = pageId === HEADER ? 'ヘッダー' : 'フッター';
@@ -2172,6 +2176,7 @@ if (serverMode) {
   $('posts-link').hidden = false;
   // "サンプルに戻す" is for trying the editor alone; on the server it would replace a real page.
   $('reset').hidden = true;
+  postInSite = siteMode && page.meta?.kind === 'post';
   if (page.meta) showMeta(page.meta);
   if (siteMode && !isPart(pageId)) siteAddress();
 }
