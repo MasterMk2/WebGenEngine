@@ -126,6 +126,26 @@
       "render": { "tag": "td" }
     },
     {
+      "name": "Nav",
+      "kind": "container",
+      "children": ["NavLink"],
+      "attributes": [
+        { "name": "aria-label", "type": "string" }
+      ],
+      "render": { "tag": "nav", "class": "wge-nav", "attrs": ["aria-label"] }
+    },
+    {
+      "name": "NavLink",
+      "kind": "text",
+      "parents": ["Nav"],
+      "excludes": ["Link"],
+      "attributes": [
+        { "name": "href", "type": "url", "required": true },
+        { "name": "aria-current", "type": "enum", "values": ["page"] }
+      ],
+      "render": { "tag": "a", "class": "wge-nav-link", "attrs": ["href", "aria-current"] }
+    },
+    {
       "name": "Html",
       "kind": "raw",
       "trusted": true,

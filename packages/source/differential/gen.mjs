@@ -99,6 +99,17 @@ function table(depth) {
   }
   return s + pick(['\n' + '  '.repeat(depth), '']) + '</Table>';
 }
+// A menu as its rules want it (items only, each with its words), with the spacing varied.
+function nav(depth) {
+  const indent = '  '.repeat(depth + 1);
+  const item = components.get('NavLink');
+  let s = `<Nav${attrs(components.get('Nav'))}>`;
+  const items = Math.floor(rand() * 4);
+  for (let i = 0; i < items; i++) {
+    s += pick(['\n' + indent, '\n', ' ', '']) + (chance(0.1) ? `<NavLink${attrs(item)} />` : `<NavLink${attrs(item)}>${inline(0, item.excludes ?? [])}</NavLink>`);
+  }
+  return s + pick(['\n' + '  '.repeat(depth), '']) + '</Nav>';
+}
 const components = new Map(comps.map((c) => [c.name, c]));
 
 function block(depth) {
@@ -107,6 +118,7 @@ function block(depth) {
   // Parts that stand only in a table appear out of place now and then (to see them refused).
   while (comp.parents && chance(0.85)) comp = pick(byKind(['container', 'text', 'void', 'raw']));
   if (comp.name === 'Table' && chance(0.85)) return table(depth);
+  if (comp.name === 'Nav' && chance(0.85)) return nav(depth);
   const open = `<${comp.name}${attrs(comp)}`;
   if (comp.kind === 'void') return open + pick(['/>', ' />']);
   if (comp.kind === 'raw') return `${open}>${pick(RAW)}${chance(0.5) ? pick(RAW) + pick(RAW) : ''}</Html>`;
@@ -159,6 +171,8 @@ function randomNode() {
     { type: 'Cell', props: {}, children: [{ type: 'text', value: '新しいセル' }] },
     { type: 'HeaderCell', props: { scope: 'row' }, children: [] },
     { type: 'Table', props: {}, children: [{ type: 'Row', props: {}, children: [] }] },
+    { type: 'Nav', props: { 'aria-label': 'メニュー' }, children: [{ type: 'NavLink', props: { href: '/', 'aria-current': 'page' }, children: [{ type: 'text', value: 'トップ' }] }] },
+    { type: 'NavLink', props: { href: '/blog/' }, children: [{ type: 'text', value: '<記事>' }] },
     { type: 'comment', value: ' new ' },
     { type: 'comment', value: pick(['-', 'a\rb', 'a\r\nb']) },
     { type: 'Html', props: {}, raw: '<hr>' },
@@ -242,7 +256,7 @@ function result(source, ops) {
 // R4 on the published HTML: layout lives only in classes (no style attribute or
 // other attributes outside a fixed set), and every class has a CSS rule.
 // Raw Html blocks are the author's own markup, so they are left out of the check.
-const ALLOWED_ATTRS = new Set(['class', 'href', 'src', 'alt', 'width', 'height', 'loading', 'decoding', 'title', 'scope']);
+const ALLOWED_ATTRS = new Set(['class', 'href', 'src', 'alt', 'width', 'height', 'loading', 'decoding', 'title', 'scope', 'aria-label', 'aria-current']);
 // An <iframe> loads only from the places schema.embedSources lists, and is always closed.
 const EMBED_SOURCES = schema.embedSources ?? [];
 const decodeAttr = (v) => v.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');

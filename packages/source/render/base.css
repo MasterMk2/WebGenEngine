@@ -17,7 +17,7 @@ a:focus-visible { outline: 2px solid var(--wge-color-primary); outline-offset: 2
 .wge-bg-subtle { background: var(--wge-color-subtle); }
 .wge-bg-primary { background: var(--wge-color-primary); color: var(--wge-color-on-primary); }
 .wge-bg-inverse { background: var(--wge-color-inverse); color: var(--wge-color-on-inverse); }
-.wge-bg-primary a:not(.wge-button), .wge-bg-inverse a:not(.wge-button) { color: inherit; }
+.wge-bg-primary a:not(.wge-button, .wge-nav-link), .wge-bg-inverse a:not(.wge-button, .wge-nav-link) { color: inherit; }
 
 .wge-stack { display: flex; flex-direction: column; gap: var(--wge-space-md); }
 .wge-direction-vertical { flex-direction: column; }
@@ -46,7 +46,7 @@ a:focus-visible { outline: 2px solid var(--wge-color-primary); outline-offset: 2
 .wge-surface-none { padding: 0; }
 .wge-surface-card { padding: var(--wge-space-md); background: var(--wge-color-background); color: var(--wge-color-text); border: 1px solid var(--wge-color-subtle); border-radius: var(--wge-radius); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); }
 .wge-surface-notice { padding: var(--wge-space-md); background: var(--wge-color-subtle); color: var(--wge-color-text); border-inline-start: 4px solid var(--wge-color-primary); border-radius: var(--wge-radius); }
-:is(.wge-surface-card, .wge-surface-notice) a:not(.wge-button) { color: var(--wge-color-primary); }
+:is(.wge-surface-card, .wge-surface-notice) a:not(.wge-button, .wge-nav-link) { color: var(--wge-color-primary); }
 
 .wge-heading { margin: 0; line-height: 1.3; }
 .wge-text { margin: 0; }
@@ -90,6 +90,24 @@ small { font-size: var(--wge-font-size-sm); }
 .wge-table :is(th, td) { padding: var(--wge-space-sm) var(--wge-space-md); border-block-end: 1px solid var(--wge-color-subtle); text-align: start; vertical-align: top; }
 .wge-table th { background: var(--wge-color-subtle); font-weight: 600; }
 .wge-table th[scope="row"] { width: 30%; min-width: 6em; }
+
+/* A menu of links (rendering.md §7.6): in a row that wraps on a computer, and in one row that
+   scrolls sideways on a phone, so the page itself is not pushed down. The page one is on is marked
+   (aria-current) by the colours of a primary button. Its links take their colours here only. */
+.wge-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 0.125rem 0.25rem; min-width: 0; }
+.wge-nav-link { display: inline-flex; align-items: center; min-height: 2.75rem; padding-inline: 0.75rem; border-radius: var(--wge-radius); color: var(--wge-color-text); font-size: var(--wge-font-size-sm); font-weight: 700; text-decoration: none; white-space: nowrap; }
+.wge-nav-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.wge-nav-link[aria-current="page"] { background: var(--wge-color-primary); color: var(--wge-color-on-primary); }
+.wge-bg-primary .wge-nav-link { color: var(--wge-color-on-primary); }
+.wge-bg-primary .wge-nav-link[aria-current="page"] { background: var(--wge-color-on-primary); color: var(--wge-color-primary); }
+.wge-bg-inverse .wge-nav-link { color: var(--wge-color-on-inverse); }
+.wge-bg-inverse .wge-nav-link[aria-current="page"] { background: var(--wge-color-on-inverse); color: var(--wge-color-inverse); }
+:is(.wge-surface-card, .wge-surface-notice) .wge-nav-link { color: var(--wge-color-text); }
+:is(.wge-surface-card, .wge-surface-notice) .wge-nav-link[aria-current="page"] { background: var(--wge-color-primary); color: var(--wge-color-on-primary); }
+.wge-bg-primary .wge-nav-link:focus-visible { outline-color: var(--wge-color-on-primary); }
+@media (max-width: 40rem) {
+  .wge-nav { flex-wrap: nowrap; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+}
 
 /* The site's header and footer (site.md §5): set apart from the page by a line. */
 .wge-site-header { border-block-end: 1px solid var(--wge-color-subtle); }
