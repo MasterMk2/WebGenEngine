@@ -398,6 +398,23 @@ check(array_column($body['pages'], 'id') === ['20261101-c3d4', '20261123-a1b2'] 
 [$status, $body] = $bpost('/api/pages/20261123-a1b2/delete', []);
 check($status === 409 && $body['reason'] === 'published' && is_file($site . '/20261123-a1b2/index.html'), 'a published post cannot be deleted, and stays on the site');
 
+// "非公開に戻す": a post published twice goes off the site in one step, not back to its first publish.
+[$status] = $bpost('/api/pages/20261123-a1b2/publish', ['revision' => 1]);
+check($status === 200, 'the post is published once more');
+[, $versions] = $blogApi->handle('GET', '/api/pages/20261123-a1b2/versions', '', []);
+$liveNow = array_values(array_filter($versions['versions'], static fn (array $v) => $v['live']))[0]['id'];
+[$status, $body] = $bpost('/api/pages/20261123-a1b2/undo-publish', ['versionId' => $liveNow, 'unpublish' => 'yes']);
+check($status === 400 && $body['reason'] === 'bad-request' && is_file($site . '/20261123-a1b2/index.html'), 'unpublish must be true or false');
+[$status, $body] = $bpost('/api/pages/20261123-a1b2/undo-publish', ['versionId' => $liveNow, 'unpublish' => true]);
+check($status === 200 && $body['published'] === null && $body['unpublishedChanges'] === true, 'unpublishing leaves nothing published');
+$contents = (string) @file_get_contents($site . '/index.html');
+check(!is_file($site . '/20261123-a1b2/index.html') && !str_contains($contents, '20261123-a1b2/') && str_contains($contents, '20261101-c3d4/'), 'an unpublished post leaves the site and the contents page, the others stay');
+check(!str_contains((string) @file_get_contents($site . '/feed.xml'), '20261123-a1b2'), 'an unpublished post leaves the feed');
+[, $body] = $blogApi->handle('GET', '/api/pages', '', []);
+check(array_column($body['pages'], 'published', 'id')['20261123-a1b2'] === false, 'the list shows the unpublished post as a draft');
+[$status] = $bpost('/api/pages/20261123-a1b2/publish', ['revision' => 1]);
+check($status === 200 && is_file($site . '/20261123-a1b2/index.html'), 'an unpublished post can be published again from its draft');
+
 $liveOf = static function (string $id) use ($blogApi): int {
     [, $body] = $blogApi->handle('GET', "/api/pages/{$id}/versions", '', []);
     return array_values(array_filter($body['versions'], static fn (array $v) => $v['live'] ?? false))[0]['id'];

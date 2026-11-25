@@ -34,7 +34,7 @@
 | `POST /api/pages/{id}/load` | `initialSource` | 200。なければ作る | 422（読めないソース） |
 | `POST /api/pages/{id}/draft` | `source`、`baseRevision` | 200 | 409 `conflict`（相手の下書きを返す）、422 `invalid`（行と列を返す）、404 `not-loaded` |
 | `POST /api/pages/{id}/publish` | `revision` | 200。公開用の HTML を書く | 409 `stale` |
-| `POST /api/pages/{id}/undo-publish` | `versionId` | 200。前の版の HTML に書き戻す。前がなければ消す | 409 `not-live` |
+| `POST /api/pages/{id}/undo-publish` | `versionId`、`unpublish`（省略可・真偽値） | 200。前の版の HTML に書き戻す。前がなければ消す。`unpublish: true` なら前の版があっても消し、何も公開していない状態にする（非公開に戻す。下書きと版は残る） | 409 `not-live`、400（`unpublish` が真偽値でない） |
 | `GET /api/pages/{id}/versions` | — | 200。新しい順。ソースは含めない | — |
 | `GET /api/pages/{id}/versions/{n}` | — | 200。その版のソース | 404 |
 

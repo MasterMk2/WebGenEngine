@@ -42,6 +42,20 @@
       ]
     },
     {
+      "name": "undoPublish with unpublish leaves nothing published, however many publishes came before",
+      "steps": [
+        { "call": "load", "args": ["A"] },
+        { "call": "publish", "args": [0], "expect": { "version": { "id": 1 } } },
+        { "call": "saveDraft", "args": ["B", 0] },
+        { "call": "publish", "args": [1], "expect": { "version": { "id": 3 } } },
+        { "call": "undoPublish", "args": [1, true], "expect": { "ok": false, "reason": "not-live" } },
+        { "call": "undoPublish", "args": [3, true], "expect": { "ok": true, "published": null, "unpublishedChanges": true } },
+        { "call": "undoPublish", "args": [3, true], "expect": { "ok": false, "reason": "not-live" } },
+        { "call": "getVersion", "args": [3], "expect": "B" },
+        { "call": "publish", "args": [1], "expect": { "ok": true, "version": { "id": 4 }, "published": { "id": 4 } } }
+      ]
+    },
+    {
       "name": "autosaves keep a version at most every checkpoint interval",
       "options": { "checkpointEvery": 600000 },
       "steps": [

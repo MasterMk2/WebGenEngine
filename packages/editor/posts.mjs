@@ -81,9 +81,11 @@ function render(pages, list = $('post-list'), empty = words.empty) {
     meta.className = 'post-meta';
     meta.textContent = pageState(page);
     side.append(meta);
-    // A published page is taken back in the editor first, so deleting never changes the site.
+    // A published page is made a draft first (非公開に戻す), so deleting never changes the site.
     // A site's first page stays (the editor opens it by default).
     if (!page.published && !(siteMode && page.id === 'top')) side.append(rowButton('削除', `「${page.title}」を削除`, 'danger', () => remove(page)));
+    // A published page can be taken off the site here; its draft stays. A site's first page stays up.
+    if (page.published && !(siteMode && page.id === 'top')) side.append(rowButton('非公開に戻す', `「${page.title}」を非公開に戻す`, '', () => unpublish(page)));
     li.append(a, side);
     if (page.published) li.classList.add('live');
     list.append(li);
@@ -169,11 +171,29 @@ async function remove(page) {
     return;
   }
   const why = {
-    published: `この${words.page}は公開中のため削除できません。エディタで公開を取り消してから削除してください。`,
+    published: `この${words.page}は公開中のため削除できません。「非公開に戻す」を押してから削除してください。`,
     deleted: `この${words.page}はすでに削除されています。`,
   }[res.reason];
   await refresh();
   status(why ?? said(res, '削除できませんでした。もう一度押してください。'), 'error');
+}
+
+// The page leaves the public site at once, so it asks first. The draft stays; publishing it again
+// in the editor brings it back.
+async function unpublish(page) {
+  const kind = page.kind === 'page' || (siteMode && !withBlog) ? WORDS.site.page : WORDS.blog.page;
+  if (!window.confirm(`「${page.title}」を非公開に戻しますか？\nサイトから外れます。書いた内容は下書きに残り、エディタでもう一度公開すれば戻ります。`)) return;
+  const versions = await call(`/pages/${page.id}/versions`);
+  const live = versions.ok ? versions.versions.find((v) => v.live) : undefined;
+  if (!versions.ok || live === undefined) {
+    await refresh();
+    status(versions.ok ? `この${kind}はすでに公開されていません。` : said(versions, '非公開に戻せませんでした。もう一度押してください。'), versions.ok ? '' : 'error');
+    return;
+  }
+  const res = await call(`/pages/${page.id}/undo-publish`, { versionId: live.id, unpublish: true });
+  await refresh();
+  if (res.ok) status(`「${page.title}」を非公開に戻しました。下書きとして一覧にあります。`);
+  else status(res.reason === 'not-live' ? 'ほかの人が公開し直したため、非公開に戻せませんでした。もう一度押してください。' : said(res, '非公開に戻せませんでした。もう一度押してください。'), 'error');
 }
 
 async function restore(page) {
@@ -198,7 +218,7 @@ function useSiteWords(siteName) {
   $('new-path').required = true;
   $('new-path-hint').hidden = false;
   $('list-title').textContent = 'ページ';
-  $('list-hint').textContent = '下書きのページは「削除」で一覧から外せます。公開中のページは、エディタで公開を取り消してから削除します。書き出し先を変えたページは、次に公開したときに移ります。';
+  $('list-hint').textContent = '下書きのページは「削除」で一覧から外せます。公開中のページは「非公開に戻す」で下書きにしてから削除します。書き出し先を変えたページは、次に公開したときに移ります。';
   $('parts').hidden = false;
   $('trash-label').textContent = '削除したページ';
 }
