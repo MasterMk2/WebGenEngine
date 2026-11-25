@@ -56,7 +56,7 @@ if (str_starts_with($path, '/api/')) {
         $renderer,
         hosts: ["127.0.0.1:{$port}", "localhost:{$port}"],
         blog: $blogTitle === '' ? null : new Blog($blogTitle, $format, $renderer),
-        site: $siteName === '' || $blogTitle !== '' ? null : new Site($siteName, json_decode((string) file_get_contents($packages . '/source/schema.json'), true, 512, JSON_THROW_ON_ERROR)),
+        site: $siteName === '' ? null : new Site($siteName, json_decode((string) file_get_contents($packages . '/source/schema.json'), true, 512, JSON_THROW_ON_ERROR)),
     );
     $headers = array_change_key_case(function_exists('getallheaders') ? getallheaders() : [], CASE_LOWER);
     [$status, $body] = $api->handle($_SERVER['REQUEST_METHOD'], $path, (string) file_get_contents('php://input'), $headers);

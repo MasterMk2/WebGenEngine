@@ -17,6 +17,10 @@
 <main class="posts" id="posts">
   <form class="new-post" id="new-post">
     <h1 id="new-heading">新しい記事</h1>
+    <div class="new-kind" id="new-kind" role="radiogroup" aria-label="作るもの" hidden>
+      <label><input type="radio" name="kind" value="post" checked> ブログの記事</label>
+      <label><input type="radio" name="kind" value="page"> サイトのページ</label>
+    </div>
     <div class="new-post-row">
       <label for="new-title">題名</label>
       <input id="new-title" name="title" maxlength="120" required autocomplete="off">
@@ -37,6 +41,11 @@
     <h2 id="list-title">記事</h2>
     <ul class="post-list" id="post-list"></ul>
     <p class="posts-hint" id="list-hint">下書きの記事は「削除」で一覧から外せます。公開中の記事は、エディタで公開を取り消してから削除します。</p>
+  </section>
+  <section id="site-pages" aria-labelledby="site-pages-title" hidden>
+    <h2 id="site-pages-title">サイトのページ</h2>
+    <ul class="post-list" id="page-list"></ul>
+    <p class="posts-hint">下書きのページは「削除」で一覧から外せます。公開中のページは、エディタで公開を取り消してから削除します。書き出し先を変えたページは、次に公開したときに移ります。WGE が書いていない今のページと同じ場所には、公開できません。</p>
   </section>
   <section id="parts" aria-labelledby="parts-title" hidden>
     <h2 id="parts-title">共通の部分</h2>
