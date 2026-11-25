@@ -48,11 +48,12 @@ final class Blog
         return ['index.html' => self::insertIntoMain($html, '', $this->contentsList($posts)), 'feed.xml' => $this->feed($posts)];
     }
 
-    // The contents page's heading: the blog's name on a band of the theme's main colour, in a
-    // Stack so that it lines up with the list (a heading's own margin is 0, so it would not centre).
+    // The contents page's heading: the blog's name on a pale band (2026-11-26: the site's header
+    // above is on the main colour, so a band of that colour too read as one heavy block), in a Stack
+    // so that it lines up with the list.
     public function contentsSource(): string
     {
-        return "<Section background=\"primary\" padding=\"lg\" width=\"narrow\">\n  <Stack>\n    <Heading level=\"1\">" . self::text($this->title) . "</Heading>\n  </Stack>\n</Section>\n";
+        return "<Section background=\"subtle\" padding=\"md\" width=\"narrow\">\n  <Stack>\n    <Heading level=\"1\">" . self::text($this->title) . "</Heading>\n  </Stack>\n</Section>\n";
     }
 
     /**

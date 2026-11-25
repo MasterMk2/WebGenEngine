@@ -50,7 +50,7 @@
 
 ## 4. テーマ
 
-`theme.default.json` と同じ形にする。項目を足すことも欠かすこともできない。値は次の形だけを受け付け、外れたら `RenderError`（コード `E_THEME`、`key` は `space.md` など）にする。CSS に任意の文字列を差し込まれないようにするため。
+`theme.default.json` と同じ形にする。項目を足すことも欠かすこともできない（任意と書いた項目だけは欠かせる）。値は次の形だけを受け付け、外れたら `RenderError`（コード `E_THEME`、`key` は `space.md` など）にする。CSS に任意の文字列を差し込まれないようにするため。
 
 | 項目 | 形 |
 |---|---|
@@ -58,10 +58,12 @@
 | `breakpoint` | 数と単位（`rem` `em` `px`） |
 | `color` | `#rgb`、`#rrggbb`、`#rrggbbaa` |
 | `font.body` | 英数字、空白、`,` `"` `-` だけ |
+| `font.stylesheet`（任意） | 書体の読み込み先。`https://` で始まり、ホスト名のあとに `/` がある URL。引用符・空白・山かっこは不可。あれば公開ページの `<head>` で、サイトの `style.css` の前に `<link rel="stylesheet">` で読む（2026-11-26） |
 
 - 問題は決まった順番（`space` → `fontSize` → `width` → `radius` → `breakpoint` → `color` → `font` → 未知の項目）で探し、最初の 1 件を返す
 - サーバー（`trusted-front.php`・`router.php`）は、`WGE_DATA/theme.json` があればそれをテーマにする（2026-11-24）。形が違えば何も配らない（503。`--rebuild` では終了コード 1）。エディタのプレビューは `source/theme.json` を読み、サーバーが同じテーマを返す（無ければ既定のテーマ。`serve.mjs` では `theme.default.json` に戻る）
 - `space` の項目は `schema.json` の `tokens.space`、`color` などの項目は `schema.json` の `theme` で決める
+- `font.stylesheet` は、Web フォント（例：Google Fonts の Noto Sans JP）を読むためのもの。テーマは運営者が置くファイルなので、書く人は変えられない。閲覧者の端末がその配信元につなぐことになる。エディタのプレビューでは読まない（前段の CSP で止まりうるため。端末の書体で出る）
 
 ## 5. ページ全体
 

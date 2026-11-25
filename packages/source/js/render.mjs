@@ -18,6 +18,8 @@ const COLOR = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 const FONT = /^[A-Za-z0-9 ,"-]{1,200}$/;
 const LANG = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
 const ABSOLUTE_URL = /^https?:\/\/[^\s"<>]+$/;
+// A font's stylesheet (theme.font.stylesheet): https only, and no quote, space or angle bracket.
+const FONT_STYLESHEET = /^https:\/\/[a-z0-9.-]+(:[0-9]+)?\/[A-Za-z0-9._~:\/?#@!$&()*+,;=%-]*$/;
 const HEAD_KEYS = ['description', 'url', 'image', 'type', 'siteName'];
 
 // The description and the page's address for search and sharing (rendering.md §5).
@@ -63,15 +65,20 @@ function slug(value) {
 // An empty array counts as an object, because PHP's json_decode cannot tell [] from {}.
 const isObject = (v) => v !== null && typeof v === 'object' && (!Array.isArray(v) || v.length === 0);
 
-function checkGroup(theme, group, keys, re) {
+// `optional` names keys that may be left out, each with its own pattern.
+function checkGroup(theme, group, keys, re, optional = {}) {
   const values = theme[group];
   if (!isObject(values)) throw new RenderError('E_THEME', group, 'オブジェクトで指定してください');
   for (const k of keys) {
     if (!Object.prototype.hasOwnProperty.call(values, k)) throw new RenderError('E_THEME', `${group}.${k}`, '値がありません');
     if (typeof values[k] !== 'string' || !re.test(values[k])) throw new RenderError('E_THEME', `${group}.${k}`, '使えない値です');
   }
+  for (const [k, okRe] of Object.entries(optional)) {
+    if (!Object.prototype.hasOwnProperty.call(values, k)) continue;
+    if (typeof values[k] !== 'string' || !okRe.test(values[k])) throw new RenderError('E_THEME', `${group}.${k}`, '使えない値です');
+  }
   for (const k of Object.keys(values)) {
-    if (!keys.includes(k)) throw new RenderError('E_THEME', `${group}.${k}`, '使えない項目です');
+    if (!keys.includes(k) && !Object.prototype.hasOwnProperty.call(optional, k)) throw new RenderError('E_THEME', `${group}.${k}`, '使えない項目です');
   }
 }
 
@@ -88,7 +95,7 @@ export function validateTheme(schema, theme) {
   checkScalar(theme, 'radius', LENGTH);
   checkScalar(theme, 'breakpoint', BREAKPOINT);
   checkGroup(theme, 'color', schema.theme.color, COLOR);
-  checkGroup(theme, 'font', ['body'], FONT);
+  checkGroup(theme, 'font', ['body'], FONT, { stylesheet: FONT_STYLESHEET });
   const known = ['space', 'fontSize', 'width', 'radius', 'breakpoint', 'color', 'font'];
   for (const k of Object.keys(theme)) {
     if (!known.includes(k)) throw new RenderError('E_THEME', k, '使えない項目です');
@@ -186,6 +193,8 @@ export function createRenderer(schema, theme, baseCss) {
       '<meta name="viewport" content="width=device-width, initial-scale=1">',
       `<title>${escapeText(title)}</title>`,
       ...headLines(title, head),
+      // The theme's font, before the site's own stylesheet (rendering.md §4).
+      ...(theme.font.stylesheet ? [`<link rel="stylesheet" href="${escapeAttr(theme.font.stylesheet)}">`] : []),
       `<link rel="stylesheet" href="${escapeAttr(stylesheetHref)}">`,
       '</head>',
       '<body>',
