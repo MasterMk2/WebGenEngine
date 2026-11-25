@@ -735,7 +735,87 @@ foreach (['emb0' => ['embed.html', 'map/viewer.html?v=1'], 'emb1' => ['x/embed.h
 $siteApi = null;
 removeTree($siteDir);
 
-// ------------------------------------------------------- part 7: a site with a blog (site.md §9)
+// ------------------------------------------------------- part 7: a blog's header and footer (blog.md §8)
+
+$partsDir = sys_get_temp_dir() . '/wge-test-blog-parts-' . bin2hex(random_bytes(4));
+$partsDb = PageStore::openDatabase('sqlite::memory:');
+$partsApi = new Api($partsDb, $partsDir, $format, $renderer, siteUrl: 'https://fest.example/blog/', blog: new Blog('合成のお知らせ', $format, $renderer, 'https://fest.example/blog/'));
+$ppost = static fn (string $path, array $body) => $partsApi->handle('POST', $path, json_encode($body), $json);
+$pread = static fn (string $path): string => (string) @file_get_contents($partsDir . '/' . $path);
+$livePart = static function (string $id) use ($partsApi): int {
+    [, $body] = $partsApi->handle('GET', "/api/pages/{$id}/versions", '', []);
+    return array_values(array_filter($body['versions'], static fn (array $v) => $v['live']))[0]['id'];
+};
+
+[$status, $body] = $partsApi->handle('GET', '/api/ping', '', []);
+check($status === 200 && ($body['parts'] ?? null) === true && ($body['blog'] ?? null) === true && !isset($body['site']), 'ping says a blog has a header and footer too');
+[, $body] = (new Api(PageStore::openDatabase('sqlite::memory:'), $partsDir . '-plain', $format, $renderer))->handle('GET', '/api/ping', '', []);
+check(!isset($body['parts']), 'a single page has no parts');
+
+$ppost('/api/pages/20261120-aaaa/load', ['initialSource' => $post, 'meta' => ['title' => '合成の記事', 'date' => '2026-11-20']]);
+$ppost('/api/pages/20261120-aaaa/publish', ['revision' => 0]);
+$ppost('/api/pages/20261121-bbbb/load', ['initialSource' => $post, 'meta' => ['title' => '合成の下書き', 'date' => '2026-11-21']]);
+$beforeContents = $pread('index.html');
+$beforePost = $pread('20261120-aaaa/index.html');
+$beforeFeed = $pread('feed.xml');
+
+[$status, $body] = $partsApi->handle('GET', '/api/pages', '', []);
+check($status === 200 && array_column($body['parts'] ?? [], 'id') === ['part-header', 'part-footer'] && !$body['parts'][0]['loaded'] && $body['parts'][0]['source'] === null, 'the list has the header and footer apart, not made yet');
+foreach (['part-other', 'part-x1'] as $bad) {
+    [$status] = $ppost("/api/pages/{$bad}/load", ['initialSource' => $post]);
+    check($status === 404, "only the header and footer are parts: {$bad}");
+}
+[$status, $body] = $ppost('/api/pages/part-header/load', ['initialSource' => $post, 'meta' => ['title' => '題', 'date' => '2026-11-20']]);
+check($status === 409 && $body['reason'] === 'part', 'a part has no title nor date');
+
+$header = "<Section background=\"primary\" padding=\"sm\" width=\"wide\">\n  <Stack direction=\"horizontal\" justify=\"between\" align=\"center\">\n    <Image src=\"../media/0123456789abcdef.png\" alt=\"合成の祭\" width=\"120\" height=\"40\" />\n    <Text><Link href=\"/\">ホーム</Link>・<Link href=\"/exhibitors.html\">出展</Link>・<Link href=\"./\">ブログ</Link>・<Link href=\"https://other.example/a\">よそ</Link></Text>\n  </Stack>\n</Section>\n";
+$footer = "<Section background=\"inverse\" padding=\"md\">\n  <Text size=\"sm\">合成の祭 実行委員会</Text>\n</Section>\n";
+[$status, $body] = $ppost('/api/pages/part-header/load', ['initialSource' => $header]);
+check($status === 200 && $body['meta'] === null, 'the header opens without a title');
+[$status, $body] = $ppost('/api/pages/part-header/meta', ['title' => '題', 'date' => '2026-11-20']);
+check($status === 409 && $body['reason'] === 'part', 'nor can one be given later');
+[$status, $body] = $ppost('/api/pages/part-header/delete', []);
+check($status === 409 && $body['reason'] === 'part', 'a part is not deleted');
+$partsApi->rebuildSite();
+check($pread('index.html') === $beforeContents && $pread('20261120-aaaa/index.html') === $beforePost && $pread('feed.xml') === $beforeFeed, 'a header only drafted changes no byte of the blog');
+check(!is_dir($partsDir . '/part-header'), 'nor writes a folder for it');
+
+[$status] = $ppost('/api/pages/part-header/publish', ['revision' => 0]);
+$contents = $pread('index.html');
+$page = $pread('20261120-aaaa/index.html');
+check($status === 200 && !is_dir($partsDir . '/part-header'), 'publishing the header writes no page of its own');
+check(str_contains($page, '<header class="wge-site-header">') && strpos($page, '<header class="wge-site-header">') < strpos($page, '<main class="wge-page">'), 'a published post gets the header before its text');
+check(str_contains($contents, '<header class="wge-site-header">') && strpos($contents, '</header>') < strpos($contents, '<main class="wge-page">'), 'so does the contents page');
+check(str_contains($page, 'src="../media/0123456789abcdef.png"') && str_contains($contents, 'src="media/0123456789abcdef.png"'), "the header's picture is found from a post and from the contents page");
+check(str_contains($page, 'href="/exhibitors.html"') && str_contains($contents, 'href="/exhibitors.html"') && str_contains($page, 'href="/"') && str_contains($contents, 'href="./"') && str_contains($page, 'href="https://other.example/a"'), "the header's links from the root of the larger site stay as written");
+check(str_contains($page, '<p class="wge-post-crumb">') && strpos($page, '<p class="wge-post-crumb">') > strpos($page, '<main class="wge-page">'), "a post's frame stays inside its main");
+check(!is_file($partsDir . '/20261121-bbbb/index.html'), 'a draft post is not written by it');
+[, $body] = $partsApi->handle('GET', '/api/pages', '', []);
+check(array_column($body['pages'], 'id') === ['20261121-bbbb', '20261120-aaaa'] && $body['parts'][0]['published'] && $body['parts'][0]['source'] === $header, 'the parts never show among the posts; the published header is given to the editor');
+check(!str_contains($pread('feed.xml'), 'part-') && !str_contains($contents, 'part-header'), 'nor in the feed or the contents page');
+
+$ppost('/api/pages/part-header/draft', ['source' => "<Section>\n  <Text>合成の書きかけ</Text>\n</Section>\n", 'baseRevision' => 0]);
+$ppost('/api/pages/20261120-aaaa/draft', ['source' => $post . "<Section>\n  <Text>二版</Text>\n</Section>\n", 'baseRevision' => 0]);
+$ppost('/api/pages/20261120-aaaa/publish', ['revision' => 1]);
+check(!str_contains($pread('20261120-aaaa/index.html'), '合成の書きかけ') && str_contains($pread('20261120-aaaa/index.html'), '二版') && str_contains($pread('20261120-aaaa/index.html'), 'href="/exhibitors.html"'), "a header's draft is never in a page; its published version is");
+
+$ppost('/api/pages/part-footer/load', ['initialSource' => $footer]);
+$ppost('/api/pages/part-footer/publish', ['revision' => 0]);
+$page = $pread('20261120-aaaa/index.html');
+check(str_contains($page, '<footer class="wge-site-footer">') && strpos($page, '</main>') < strpos($page, '<footer class="wge-site-footer">') && str_contains($pread('index.html'), '合成の祭 実行委員会'), 'the footer goes after main, in the posts and the contents page');
+
+$partsApi->rebuildSite();
+check(str_contains($pread('index.html'), 'src="media/0123456789abcdef.png"') && str_contains($pread('20261120-aaaa/index.html'), '<footer class="wge-site-footer">'), 'writing the blog again keeps its parts');
+
+[$status, $body] = $ppost('/api/pages/part-header/undo-publish', ['versionId' => $livePart('part-header')]);
+check($status === 200 && $body['published'] === null && !str_contains($pread('20261120-aaaa/index.html'), 'wge-site-header') && !str_contains($pread('index.html'), 'wge-site-header'), 'taking the header back takes it out of every page');
+$ppost('/api/pages/part-footer/undo-publish', ['versionId' => $livePart('part-footer')]);
+check($pread('index.html') === $beforeContents, 'with neither part published, the contents page is as before, to the byte');
+
+$partsApi = null;
+removeTree($partsDir);
+
+// ------------------------------------------------------- part 8: a site with a blog (site.md §9)
 
 // A blog as it was run before (blog.md): its folder is the site's blog/, with a post that has a picture.
 $sbDir = sys_get_temp_dir() . '/wge-test-siteblog-' . bin2hex(random_bytes(4));
@@ -766,12 +846,12 @@ $sbr = static fn (string $path): string => (string) @file_get_contents($sbDir . 
 check(($body['site'] ?? null) === true && ($body['blog'] ?? null) === true && $body['siteUrl'] === 'https://fest.example/', 'ping says a site with a blog');
 $rebuilt = $sb->rebuildSite();
 check($rebuilt === ['20261120-aaaa'], 'a rebuild writes the published post again: ' . json_encode($rebuilt));
-$post = $sbr('blog/20261120-aaaa/index.html');
-check(str_contains($post, 'src="../../media/' . $pic . '"') && str_contains($post, 'href="../../about.html"') && str_contains($post, 'href="../style.css"'), "a post's picture and links are made relative to blog/<id>/");
-check(str_contains($post, '<meta property="og:url" content="https://fest.example/blog/20261120-aaaa/">') && str_contains($post, '<meta property="og:image" content="https://fest.example/media/' . $pic . '">') && str_contains($post, 'og:site_name" content="合成のブログ"'), "a post's address and picture for sharing are where they are seen");
-check(str_contains($post, 'class="wge-post-head"') && str_contains($post, '<a href="../">‹ 合成のブログ</a>'), 'a post keeps its frame');
-$contents = $sbr('blog/index.html');
-check(str_contains($contents, 'href="20261120-aaaa/"') && str_contains($contents, 'src="../media/' . $pic . '"'), "the contents page lists the post, its picture from the site's media/");
+$sbPost = $sbr('blog/20261120-aaaa/index.html');
+check(str_contains($sbPost, 'src="../../media/' . $pic . '"') && str_contains($sbPost, 'href="../../about.html"') && str_contains($sbPost, 'href="../style.css"'), "a post's picture and links are made relative to blog/<id>/");
+check(str_contains($sbPost, '<meta property="og:url" content="https://fest.example/blog/20261120-aaaa/">') && str_contains($sbPost, '<meta property="og:image" content="https://fest.example/media/' . $pic . '">') && str_contains($sbPost, 'og:site_name" content="合成のブログ"'), "a post's address and picture for sharing are where they are seen");
+check(str_contains($sbPost, 'class="wge-post-head"') && str_contains($sbPost, '<a href="../">‹ 合成のブログ</a>'), 'a post keeps its frame');
+$sbContents = $sbr('blog/index.html');
+check(str_contains($sbContents, 'href="20261120-aaaa/"') && str_contains($sbContents, 'src="../media/' . $pic . '"'), "the contents page lists the post, its picture from the site's media/");
 check(str_contains($sbr('blog/feed.xml'), '<link>https://fest.example/blog/20261120-aaaa/</link>') && is_file($sbDir . '/blog/style.css'), 'the feed links the post where it is seen');
 check($sbr('index.html') === 'not written by WGE' && $sbr('css/style.css') === 'not written by WGE' && !is_file($sbDir . '/style.css'), 'files WGE did not write stay, and no page of the site is written yet');
 check($sbr('sitemap.xml') === $sitemap(['https://fest.example/blog/', 'https://fest.example/blog/20261120-aaaa/']), 'the sitemap has the blog and its post');

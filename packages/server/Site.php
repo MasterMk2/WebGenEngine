@@ -79,17 +79,20 @@ final class Site
     /**
      * Rewrites, in place, the url attributes written from the site's root (/x) and the pictures the
      * editor puts in (../media/x) as addresses relative to a page $depth folders down (site.md §3.1).
+     * A blog is a folder of a larger site, so its /x mean that site's root and stay as they are;
+     * only its pictures are rewritten there ($fromRoot false, blog.md §8).
      */
-    public function relink(Node $node, int $depth): void
+    public function relink(Node $node, int $depth, bool $fromRoot = true): void
     {
         $up = str_repeat('../', $depth);
         foreach ($this->urlAttributes[$node->type] ?? [] as $attr) {
-            if (is_string($node->props[$attr] ?? null)) {
-                $node->props[$attr] = self::relative($node->props[$attr], $up);
+            $value = $node->props[$attr] ?? null;
+            if (is_string($value) && ($fromRoot || str_starts_with($value, '../media/'))) {
+                $node->props[$attr] = self::relative($value, $up);
             }
         }
         foreach ($node->children ?? [] as $child) {
-            $this->relink($child, $depth);
+            $this->relink($child, $depth, $fromRoot);
         }
     }
 

@@ -35,6 +35,8 @@ final class Blog
      * The files to write, by name in the site folder. $posts are the published posts, newest first;
      * "image" is the post's first picture as seen from the contents page (Api::contentsImage).
      *
+     * $header and $footer are the blog's published parts as seen from the contents page (blog.md §8).
+     *
      * @param list<array{id: string, title: string, date: string, description?: string, image?: string|null}> $posts
      * @return array<string, string|null> null removes the file
      */

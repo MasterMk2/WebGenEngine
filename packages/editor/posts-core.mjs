@@ -89,11 +89,12 @@ export function pageIdFor(path, taken = new Set()) {
   return id;
 }
 
-/** The first source of the site's header or footer: the site's name, linking to the top page. */
-export function partTemplate(id, siteName) {
+/** The first source of the header or footer: the name, linking to the top page ($home; null: no link). */
+export function partTemplate(id, siteName, home = '/') {
   const name = sourceText(siteName);
   if (id === HEADER) {
-    return ['<Section padding="sm">', '  <Stack direction="horizontal" justify="between" align="center">', `    <Text size="lg"><Link href="/">${name}</Link></Text>`, '  </Stack>', '</Section>', ''].join('\n');
+    const label = home === null ? name : `<Link href="${sourceText(home)}">${name}</Link>`;
+    return ['<Section padding="sm">', '  <Stack direction="horizontal" justify="between" align="center">', `    <Text size="lg">${label}</Text>`, '  </Stack>', '</Section>', ''].join('\n');
   }
   return ['<Section padding="sm">', `  <Text size="sm">${name}</Text>`, '</Section>', ''].join('\n');
 }
