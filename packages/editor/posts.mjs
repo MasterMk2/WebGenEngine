@@ -89,7 +89,7 @@ function render(pages) {
   }
 }
 
-// The site's header and footer, each opened in the editor like a page.
+// The header and footer, each opened in the editor like a page.
 function renderParts(parts) {
   const list = $('part-list');
   list.replaceChildren();
@@ -209,6 +209,11 @@ if (ping.ok === false) {
   } else if (typeof ping.blogTitle === 'string') {
     $('site-name').textContent = ping.blogTitle;
     document.title = `${ping.blogTitle} – 記事の一覧`;
+  }
+  // A blog has a header and footer too (blog.md §8): in its contents page and every post.
+  if (ping.parts === true && !siteMode) {
+    $('parts').hidden = false;
+    $('parts-hint').textContent = 'ヘッダーとフッターは、記事の一覧とすべての記事に入ります。公開すると、公開中の記事と一覧がまとめて書き直されます。';
   }
   if (typeof ping.siteUrl === 'string' && /^https?:\/\//.test(ping.siteUrl)) {
     $('view-site').href = ping.siteUrl;

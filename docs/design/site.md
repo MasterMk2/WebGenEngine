@@ -79,6 +79,7 @@
 - 共通の部分には題名も書き出し先も無い。`meta` は 409 `part`、`delete` は 409 `part`
 - `GET /api/pages` の `pages` には出さず、`parts`（id・loaded・published・savedAt・source）で返す。`source` は公開中の版のソース（無ければ null。下書きは出さない）。エディタのプレビューが使う（§6）
 - `part-` で始まるほかの id は、サイトでは 404
+- ブログでも同じ共通の部分を持つ（2026-11-25。blog.md §8）。ブログでは `/` のアドレスを書き換えない
 - 書き出し: `renderPage` の `header`・`footer`（rendering.md §5）。`<main>` の前に `<header class="wge-site-header">`、後ろに `<footer class="wge-site-footer">`。渡さなければ、出力は前と 1 バイトも変わらない
 
 ## 6. エディタ

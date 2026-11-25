@@ -278,11 +278,11 @@ function render() {
   frame.srcdoc = [
     '<!doctype html><html lang="ja"><head><meta charset="utf-8">',
     `<style>${renderer.stylesheet()}${PREVIEW_CSS}</style></head><body>`,
-    part('header', 'wge-site-header', siteParts.header, 'ヘッダー（全ページ共通。ページの一覧から直します）'),
+    part('header', 'wge-site-header', siteParts.header, `ヘッダー（全ページ共通。${siteMode ? 'ページ' : '記事'}の一覧から直します）`),
     '<main class="wge-page" data-wge-path="">',
     renderer.renderFragment(state.doc, '  ', { annotate: true }),
     '</main>',
-    part('footer', 'wge-site-footer', siteParts.footer, 'フッター（全ページ共通。ページの一覧から直します）'),
+    part('footer', 'wge-site-footer', siteParts.footer, `フッター（全ページ共通。${siteMode ? 'ページ' : '記事'}の一覧から直します）`),
     '</body></html>',
   ].join('\n');
   renderProps();
@@ -1536,6 +1536,9 @@ window.addEventListener('hashchange', () => location.reload());
 // A site of pages (site.md): its pages have a path instead of a date, and its header and footer
 // (part-header, part-footer) are edited here like a page. Set at start-up from /api/ping.
 let siteMode = false;
+// A site's or a blog's header and footer (site.md §5, blog.md §8): edited here like a page, and
+// drawn around the other pages in the preview. Set at start-up from /api/ping.
+let hasParts = false;
 // Where a site's page goes when next published, and where it is written now (null: nowhere).
 const sitePaths = { path: null, livePath: null };
 // Replaced at start-up by the server's store when the editor is served with the PHP API
@@ -1954,7 +1957,7 @@ async function publish() {
   renderHistory();
   const actions = [{ label: '公開を取り消す', run: () => undoPublish(res.version.id) }];
   if (serverMode) actions.push({ label: 'サイトを見る', run: () => window.open(SITE_URL, '_blank', 'noopener') });
-  const what = siteMode && isPart(pageId) ? '公開しました。公開中のすべてのページに入りました' : '公開しました';
+  const what = hasParts && isPart(pageId) ? '公開しました。公開中のすべてのページに入りました' : '公開しました';
   status(`${what}（${clock.format(res.version.at)}）`, 'ok', actions);
 }
 
@@ -1972,7 +1975,7 @@ async function undoPublish(versionId) {
   }
   showSaveState(restingSaveState());
   renderHistory();
-  if (siteMode && isPart(pageId)) status(res.published ? '公開を取り消しました。すべてのページが前の内容に戻りました' : '公開を取り消しました。どのページにも入っていません', 'ok');
+  if (hasParts && isPart(pageId)) status(res.published ? '公開を取り消しました。すべてのページが前の内容に戻りました' : '公開を取り消しました。どのページにも入っていません', 'ok');
   else status(res.published ? '公開を取り消しました。公開中のページは前の内容に戻りました' : '公開を取り消しました。このページは公開されていません', 'ok');
 }
 
@@ -2141,19 +2144,22 @@ const SITE_ROOT = typeof ping?.siteUrl === 'string' && /^https?:\/\//.test(ping.
 // A site's page is seen where it is written; its header and footer from the top page (site.md).
 let SITE_URL = pageId === 'top' ? SITE_ROOT : `${SITE_ROOT}${pageId}/`;
 siteMode = ping?.wge === 1 && ping.site === true;
+hasParts = ping?.wge === 1 && (ping.parts === true || siteMode);
 const siteName = siteMode && typeof ping.siteName === 'string' ? ping.siteName : '';
-if (siteMode) {
-  $('posts-link').textContent = 'ページの一覧';
-  if (isPart(pageId)) {
-    SITE_URL = SITE_ROOT;
-    const name = pageId === HEADER ? 'ヘッダー' : 'フッター';
-    $('page-name').textContent = `${name}（すべてのページに共通）`;
-    document.title = `${name} – エディタ`;
-  }
+if (siteMode) $('posts-link').textContent = 'ページの一覧';
+if (hasParts && isPart(pageId)) {
+  SITE_URL = SITE_ROOT;
+  const name = pageId === HEADER ? 'ヘッダー' : 'フッター';
+  $('page-name').textContent = `${name}（すべてのページに共通）`;
+  document.title = `${name} – エディタ`;
 }
 $('view-site').href = SITE_URL;
-// A site's header, footer and first page start from a short page of their own, not the sample.
-const firstSource = !siteMode ? sample : isPart(pageId) ? partTemplate(pageId, siteName) : postTemplate(siteName || 'トップページ');
+// The header, footer and a site's first page start from a short page of their own, not the sample.
+// A blog is a folder of a larger site, so its name links to where the blog is seen.
+const blogTitle = typeof ping?.blogTitle === 'string' ? ping.blogTitle : '';
+const firstSource = hasParts && isPart(pageId)
+  ? (siteMode ? partTemplate(pageId, siteName) : partTemplate(pageId, blogTitle || 'ブログ', SITE_ROOT.startsWith('http') ? SITE_ROOT : null))
+  : !siteMode ? sample : postTemplate(siteName || 'トップページ');
 let page;
 if (ping?.wge === 1) {
   try {
@@ -2196,4 +2202,4 @@ if (readable(page.draft.source)) {
   status('保存されていた下書きを読めなかったため、サンプルを開きました', 'error');
 }
 showSaveState(saving.savedSource === state.source ? 'saved' : 'pending');
-if (serverMode && siteMode && !isPart(pageId)) loadSiteParts();
+if (serverMode && hasParts && !isPart(pageId)) loadSiteParts();
