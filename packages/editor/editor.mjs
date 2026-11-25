@@ -2007,9 +2007,10 @@ async function renderHistory() {
   note.textContent = '公開した版と、10 分ごとの自動保存が残ります。戻しても、公開するまで公開中のページは変わりません。';
   const list = document.createElement('ol');
   // "非公開に戻す" is apart from the rows: it takes the page off the site, not back to a version.
+  // A site's first page stays up, as in the list of pages.
   const liveVersion = versions.find((v) => v.live);
   let off = null;
-  if (liveVersion) {
+  if (liveVersion && !(siteMode && pageId === 'top')) {
     off = document.createElement('p');
     off.className = 'live-note';
     off.append('公開中です。', button('非公開に戻す', () => unpublishPage(liveVersion.id)));
