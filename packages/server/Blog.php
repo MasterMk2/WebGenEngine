@@ -43,6 +43,7 @@ final class Blog
     public function files(array $posts, ?Document $header = null, ?Document $footer = null): array
     {
         $head = $this->siteUrl === null ? [] : ['url' => rtrim($this->siteUrl, '/') . '/', 'type' => 'website', 'siteName' => $this->title];
+        // In a site (site.md §9) the contents page carries the site's header and footer, made for it.
         $html = $this->renderer->renderPage($this->format->parse($this->contentsSource()), $this->title, 'ja', 'style.css', false, $head, $header, $footer);
         return ['index.html' => self::insertIntoMain($html, '', $this->contentsList($posts)), 'feed.xml' => $this->feed($posts)];
     }

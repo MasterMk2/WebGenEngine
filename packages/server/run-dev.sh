@@ -6,7 +6,8 @@
 #   empty argument can be lost on its way through wsl)
 # Data (SQLite and the published site) goes to server/data/, which Git ignores. With a blog
 # title the site is a blog (blog.md) and its data goes to server/data/blog/ instead; with a
-# site name (and no blog title) it is a site of pages (site.md), in server/data/pages/:
+# site name (and no blog title) it is a site of pages (site.md), in server/data/pages/; with both,
+# a site with its blog under blog/ (site.md §9), in server/data/site-blog/:
 #   sh server/run-dev.sh php:8.3-apache 8768 - 合成の祭
 set -eu
 cd "$(dirname "$0")/.."
@@ -18,6 +19,7 @@ site=${4:-}
 data=server/data
 [ -z "$site" ] || data=server/data/pages
 [ -z "$blog" ] || data=server/data/blog
+[ -z "$site" ] || [ -z "$blog" ] || data=server/data/site-blog
 mkdir -p "$data"
 # A container left over from a previous run would hold the port.
 docker rm -f "wge-dev-$port" >/dev/null 2>&1 || true
