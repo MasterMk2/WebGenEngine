@@ -1965,10 +1965,13 @@ async function publish() {
   status(`${what}（${clock.format(res.version.at)}）`, 'ok', actions);
 }
 
-async function undoPublish(versionId) {
-  const res = await store.undoPublish(versionId);
+// `unpublish` ("非公開に戻す"): nothing stays published, however many publishes came before.
+async function undoPublish(versionId, unpublish = false) {
+  const res = await store.undoPublish(versionId, unpublish);
   if (!res.ok) {
-    status(res.reason === 'not-live' ? 'すでに別の版が公開されているため、取り消せません。履歴から戻してください' : serverMessage(res, '公開を取り消せませんでした'), 'error');
+    if (unpublish) status(res.reason === 'not-live' ? 'ほかの人が公開し直したため、非公開に戻せませんでした。履歴を開き直してから、もう一度押してください' : serverMessage(res, '非公開に戻せませんでした'), 'error');
+    else status(res.reason === 'not-live' ? 'すでに別の版が公開されているため、取り消せません。履歴から戻してください' : serverMessage(res, '公開を取り消せませんでした'), 'error');
+    renderHistory();
     return;
   }
   saving.publishedSource = res.published ? await store.getVersion(res.published.id) : null;
@@ -1979,8 +1982,16 @@ async function undoPublish(versionId) {
   }
   showSaveState(restingSaveState());
   renderHistory();
-  if (hasParts && isPart(pageId)) status(res.published ? '公開を取り消しました。すべてのページが前の内容に戻りました' : '公開を取り消しました。どのページにも入っていません', 'ok');
+  if (unpublish) status(hasParts && isPart(pageId) ? '非公開に戻しました。どのページにも入っていません。書いた内容は下書きに残っています' : '非公開に戻しました。サイトから外れ、書いた内容は下書きに残っています。もう一度「公開」を押せば戻ります', 'ok');
+  else if (hasParts && isPart(pageId)) status(res.published ? '公開を取り消しました。すべてのページが前の内容に戻りました' : '公開を取り消しました。どのページにも入っていません', 'ok');
   else status(res.published ? '公開を取り消しました。公開中のページは前の内容に戻りました' : '公開を取り消しました。このページは公開されていません', 'ok');
+}
+
+// Asked first: the page leaves the public site at once, and one click does not bring it back.
+async function unpublishPage(versionId) {
+  const what = hasParts && isPart(pageId) ? 'ヘッダー・フッターを非公開に戻しますか？\nすべてのページから外れます。' : 'このページを非公開に戻しますか？\nサイトから外れます。書いた内容は下書きに残り、もう一度公開すれば戻ります。';
+  if (!window.confirm(what)) return;
+  await undoPublish(versionId, true);
 }
 
 $('publish').addEventListener('click', publish);
@@ -1995,6 +2006,14 @@ async function renderHistory() {
   note.className = 'note';
   note.textContent = '公開した版と、10 分ごとの自動保存が残ります。戻しても、公開するまで公開中のページは変わりません。';
   const list = document.createElement('ol');
+  // "非公開に戻す" is apart from the rows: it takes the page off the site, not back to a version.
+  const liveVersion = versions.find((v) => v.live);
+  let off = null;
+  if (liveVersion) {
+    off = document.createElement('p');
+    off.className = 'live-note';
+    off.append('公開中です。', button('非公開に戻す', () => unpublishPage(liveVersion.id)));
+  }
   for (const v of versions) {
     const li = document.createElement('li');
     const label = `${v.kind === 'publish' ? '公開' : '自動保存'} ${dateClock.format(v.at)}`;
@@ -2018,7 +2037,7 @@ async function renderHistory() {
     panel.replaceChildren(h, empty);
     return;
   }
-  panel.replaceChildren(h, note, list);
+  panel.replaceChildren(...[h, note, off, list].filter(Boolean));
 }
 
 async function restoreVersion(id, label) {

@@ -57,7 +57,7 @@ export function createHttpStore(base, pageId, { fetch = globalThis.fetch } = {})
     },
     saveDraft: (source, baseRevision) => call('/draft', { source, baseRevision }),
     publish: (revision) => call('/publish', { revision }),
-    undoPublish: (versionId) => call('/undo-publish', { versionId }),
+    undoPublish: (versionId, unpublish = false) => call('/undo-publish', unpublish ? { versionId, unpublish: true } : { versionId }),
     async listVersions() {
       const res = await call('/versions');
       return res.ok ? res.versions : [];

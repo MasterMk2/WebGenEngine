@@ -246,10 +246,12 @@ final class Api
                 return $this->result($result);
             case 'undo-publish':
                 $id = $input['versionId'] ?? null;
-                if (!is_int($id)) {
+                // "unpublish": back to not published at all, not to the version before.
+                $unpublish = $input['unpublish'] ?? false;
+                if (!is_int($id) || !is_bool($unpublish)) {
                     return self::reply(400, ['ok' => false, 'reason' => 'bad-request']);
                 }
-                $result = $store->undoPublish($id);
+                $result = $store->undoPublish($id, $unpublish);
                 if ($result['ok']) {
                     $this->writeSite($pageId, $store->publishedSource());
                     $this->writeBlog();

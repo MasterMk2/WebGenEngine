@@ -83,11 +83,12 @@ export function createPageStore(storage, pageId, { now = () => Date.now(), check
 
     // "公開を取り消す": the public site goes back to what it showed before that publish.
     // Only the latest publish can be taken back this way; older ones go through the history.
-    async undoPublish(versionId) {
+    // With `unpublish` ("非公開に戻す"), nothing is published afterwards; the draft stays.
+    async undoPublish(versionId, unpublish = false) {
       const record = read();
       const version = record.versions.find((v) => v.id === versionId);
       if (!version || version.kind !== 'publish' || record.published !== versionId) return { ok: false, reason: 'not-live' };
-      record.published = version.previous;
+      record.published = unpublish ? null : version.previous;
       if (!write(record)) return { ok: false, reason: 'storage' };
       return { ok: true, ...state(record) };
     },

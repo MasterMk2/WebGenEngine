@@ -119,15 +119,17 @@ final class PageStore
         });
     }
 
-    // "公開を取り消す": only the version that is live can be taken back.
-    public function undoPublish(int $versionId): array
+    // "公開を取り消す": only the version that is live can be taken back. With $unpublish
+    // ("非公開に戻す"), the page goes back to not published at all, however many times it was
+    // published before; the draft and the versions stay.
+    public function undoPublish(int $versionId, bool $unpublish = false): array
     {
-        return $this->write(function (array $page) use ($versionId): array {
+        return $this->write(function (array $page) use ($versionId, $unpublish): array {
             $row = $this->row('SELECT kind, previous FROM versions WHERE page = ? AND id = ?', [$this->pageId, $versionId]);
             if ($row === null || $row['kind'] !== 'publish' || $page['published'] !== $versionId) {
                 return ['ok' => false, 'reason' => 'not-live'];
             }
-            $this->run('UPDATE pages SET published = ? WHERE id = ?', [$row['previous'], $this->pageId]);
+            $this->run('UPDATE pages SET published = ? WHERE id = ?', [$unpublish ? null : $row['previous'], $this->pageId]);
             return ['ok' => true] + $this->state($this->page());
         });
     }
