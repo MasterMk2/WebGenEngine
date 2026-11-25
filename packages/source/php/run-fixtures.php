@@ -155,6 +155,9 @@ function producibleClasses(array $schema): array
         if (isset($comp['render']['class'])) {
             $list[] = $comp['render']['class'];
         }
+        if (isset($comp['render']['link'])) {
+            $list[] = $comp['render']['link']['class'];
+        }
         foreach ($comp['render']['classes'] ?? [] as $entry) {
             $parts = explode(':', $entry);
             $prefix = $parts[1] ?? $parts[0];

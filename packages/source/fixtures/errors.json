@@ -77,5 +77,6 @@
   {"name": "menu: a link inside an item", "source": "<Nav><NavLink href=\"/\"><Link href=\"/a\">x</Link></NavLink></Nav>", "error": {"code": "E_NOT_ALLOWED_HERE", "line": 1, "column": 24}},
   {"name": "menu: an item needs its address", "source": "<Nav><NavLink>x</NavLink></Nav>", "error": {"code": "E_MISSING_ATTRIBUTE", "line": 1, "column": 6}},
   {"name": "menu: only the page is marked as where one is", "source": "<Nav><NavLink href=\"/\" aria-current=\"true\">x</NavLink></Nav>", "error": {"code": "E_INVALID_VALUE", "line": 1, "column": 37}},
-  {"name": "menu: no unsafe address", "source": "<Nav><NavLink href=\"javascript:alert(1)\">x</NavLink></Nav>", "error": {"code": "E_UNSAFE_URL", "line": 1, "column": 20}}
+  {"name": "menu: no unsafe address", "source": "<Nav><NavLink href=\"javascript:alert(1)\">x</NavLink></Nav>", "error": {"code": "E_UNSAFE_URL", "line": 1, "column": 20}},
+  {"name": "a picture's link: no unsafe address", "source": "<Image src=\"a.png\" alt=\"\" href=\"javascript:alert(1)\" />", "error": {"code": "E_UNSAFE_URL", "line": 1, "column": 32}}
 ]

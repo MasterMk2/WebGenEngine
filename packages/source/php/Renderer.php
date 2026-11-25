@@ -192,8 +192,14 @@ final class Renderer
         }
         [$tag, $open] = $this->openTag($comp, $node);
         if ($comp['kind'] === 'void' || $comp['kind'] === 'inline-void') {
-            // An element that HTML does not leave open (iframe) still gets its end tag.
-            return ($comp['render']['close'] ?? false) ? $open . '</' . $tag . '>' : $open;
+            // An element that HTML does not leave open (iframe) still gets its end tag. A block that
+            // may link (a picture with a link, rendering.md §7.7) is wrapped in <a> when it has one.
+            $out = ($comp['render']['close'] ?? false) ? $open . '</' . $tag . '>' : $open;
+            $link = $comp['render']['link'] ?? null;
+            if ($link !== null && array_key_exists($link['attr'], $node->props)) {
+                return '<a class="' . $link['class'] . '" href="' . self::escapeAttr($node->props[$link['attr']]) . '">' . $out . '</a>';
+            }
+            return $out;
         }
         if ($comp['kind'] === 'container') {
             // "inner" wraps the children in one more element (a table's rows in <tbody>, which
