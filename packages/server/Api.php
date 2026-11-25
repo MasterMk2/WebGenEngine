@@ -226,6 +226,10 @@ final class Api
                 // page is written again where it is now.
                 if ($published !== null) {
                     $this->writeSite($pageId, $published);
+                    // Its new title or date shows in the posts next to it, which may be others now.
+                    if ($this->isBlogPost($pageId)) {
+                        $this->rewriteBlogPosts();
+                    }
                 }
                 $this->writeBlog();
                 return self::reply(200, ['ok' => true, 'meta' => $this->metaOf($pageId)]);
@@ -241,6 +245,10 @@ final class Api
                 $result = $store->publish($revision);
                 if ($result['ok']) {
                     $this->writeSite($pageId, $store->publishedSource(), true);
+                    // The posts on either side now link to it (blog.md §10).
+                    if ($this->isBlogPost($pageId)) {
+                        $this->rewriteBlogPosts();
+                    }
                     $this->writeBlog();
                 }
                 return $this->result($result);
@@ -252,6 +260,9 @@ final class Api
                 $result = $store->undoPublish($id);
                 if ($result['ok']) {
                     $this->writeSite($pageId, $store->publishedSource());
+                    if ($this->isBlogPost($pageId)) {
+                        $this->rewriteBlogPosts();
+                    }
                     $this->writeBlog();
                 }
                 return $this->result($result);
@@ -665,7 +676,7 @@ final class Api
             $html = $this->renderer->renderPage($doc, $title, 'ja', $pageId === 'top' ? 'style.css' : '../style.css', false, $this->pageHead($pageId, $doc, $meta['description'] ?? '', $this->siteUrl), $this->blog !== null ? $this->partOf(Site::HEADER, $depth) : null, $this->blog !== null ? $this->partOf(Site::FOOTER, $depth) : null);
             // A post carries its date and the way back to the contents (blog.md §7).
             if ($this->blog !== null && $pageId !== 'top' && is_string($meta['date'] ?? null)) {
-                $html = $this->blog->framePost($html, $meta['date']);
+                $html = $this->blog->framePost($html, $meta['date'], ...$this->neighboursOf($pageId));
             }
         } catch (SourceError | RenderError $e) {
             // Drafts are checked on save, so this is a bug; the published version stays recorded.
@@ -698,7 +709,7 @@ final class Api
             $this->site->relink($doc, 2);
             $html = $this->renderer->renderPage($doc, $title, 'ja', '../style.css', false, $this->pageHead($pageId, $doc, $meta['description'] ?? '', $this->blogUrl()), $this->partOf(Site::HEADER, 2), $this->partOf(Site::FOOTER, 2));
             if (is_string($meta['date'] ?? null) && $meta['date'] !== '') {
-                $html = $this->blog->framePost($html, $meta['date']);
+                $html = $this->blog->framePost($html, $meta['date'], ...$this->neighboursOf($pageId));
             }
         } catch (SourceError | RenderError $e) {
             error_log('wge: cannot render ' . $pageId . ': ' . $e->getMessage());
@@ -706,6 +717,43 @@ final class Api
         }
         self::writeAtomically($this->blogDir() . '/style.css', $this->renderer->stylesheet());
         self::writeAtomically($file, $html);
+    }
+
+    /** Whether $pageId is one of the blog's posts: a blog alone's pages but its contents and parts, or a site's blog's posts. */
+    private function isBlogPost(string $pageId): bool
+    {
+        if ($this->blog === null || $pageId === 'top' || Site::isPart($pageId)) {
+            return false;
+        }
+        return $this->site === null || $this->isPost($pageId);
+    }
+
+    /**
+     * The published posts on either side of $pageId, newest first as the contents page lists them
+     * (blog.md §10): [newer, older], each {id, title}, or null at an end or when $pageId is not published.
+     *
+     * @return array{0: array{id: string, title: string}|null, 1: array{id: string, title: string}|null}
+     */
+    private function neighboursOf(string $pageId): array
+    {
+        $posts = $this->listPages(true, $this->withBlog() ? 'post' : null);
+        $at = array_search($pageId, array_column($posts, 'id'), true);
+        if ($at === false) {
+            return [null, null];
+        }
+        $pick = static fn (?array $p): ?array => $p === null ? null : ['id' => $p['id'], 'title' => $p['title']];
+        return [$pick($at > 0 ? $posts[$at - 1] : null), $pick($posts[$at + 1] ?? null)];
+    }
+
+    // After a post is published, taken back or given a new title or date: every published post again,
+    // since the posts next to it changed (blog.md §10). A blog has few posts, so this stays cheap.
+    private function rewriteBlogPosts(): void
+    {
+        if ($this->withBlog()) {
+            $this->rewritePosts();
+        } else {
+            $this->writeBlogPosts();
+        }
     }
 
     // Every published post again (the header or footer changed, or a rebuild).

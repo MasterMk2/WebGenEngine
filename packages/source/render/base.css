@@ -158,8 +158,17 @@ h3.wge-heading { font-size: 1.125rem; }
 .wge-post-foot > div { display: flex; flex-wrap: wrap; gap: var(--wge-space-sm) var(--wge-space-md); padding-block-start: var(--wge-space-lg); border-block-start: 1px solid color-mix(in srgb, var(--wge-color-text) 18%, var(--wge-color-background)); }
 .wge-post-back { display: inline-flex; align-items: center; min-height: 2.75rem; padding: 0.5rem 1.375rem; border: 2px solid var(--wge-color-primary); border-radius: var(--wge-radius); color: var(--wge-color-primary); font-weight: 700; text-decoration: none; }
 .wge-post-back:hover { background: color-mix(in srgb, var(--wge-color-primary) 10%, var(--wge-color-background)); }
+/* The posts on either side (blog.md §10): one above the other on a phone, the older on the left and
+   the newer on the right on a computer. Each names the post it opens. */
+.wge-post-pager { flex: 1 1 100%; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--wge-space-sm); margin-block-end: var(--wge-space-sm); }
+.wge-post-pager-link { display: flex; flex-direction: column; gap: 0.125rem; min-height: 2.75rem; padding: 0.75rem 1rem; border: 1px solid color-mix(in srgb, var(--wge-color-text) 18%, var(--wge-color-background)); border-radius: var(--wge-radius); color: var(--wge-color-text); text-decoration: none; }
+.wge-post-pager-link:hover { border-color: var(--wge-color-primary); background: color-mix(in srgb, var(--wge-color-primary) 6%, var(--wge-color-background)); }
+.wge-post-pager-label { color: var(--wge-color-primary); font-size: var(--wge-font-size-sm); font-weight: 700; }
+.wge-post-pager-title { font-weight: 700; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
 @media (min-width: 40rem) {
+  .wge-post-pager { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wge-post-newer { grid-column: 2; align-items: flex-end; text-align: end; }
   .wge-posts-item { gap: var(--wge-space-lg); padding-block: 1.5rem; }
   .wge-posts-title { font-size: 1.25rem; }
   .wge-posts-thumb { width: 11rem; aspect-ratio: 16 / 9; }

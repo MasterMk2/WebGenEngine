@@ -345,7 +345,7 @@ check(substr_count($contents, 'class="wge-posts-thumb"') === 1 && substr_count($
 check(str_contains($contents, '<a href="feed.xml">') && str_contains($contents, "</ol>\n  <p class=\"wge-posts-feed\">") && str_contains($contents, "</div>\n</main>\n"), 'the list and the link to the feed are the last part of <main>');
 $page = (string) @file_get_contents($site . '/20261123-a1b2/index.html');
 check(str_contains($page, "<main class=\"wge-page\">\n<div class=\"wge-post-head\">\n  <div>\n    <p class=\"wge-post-crumb\"><a href=\"../\">‹ 合成のお知らせ</a></p>\n    <time class=\"wge-post-date\" datetime=\"2026-11-23\">2026年11月23日</time>"), 'a post opens with the way back to the contents and its date');
-check(str_contains($page, "<div class=\"wge-post-foot\">\n  <div><a class=\"wge-post-back\" href=\"../\">‹ 記事の一覧へ</a></div>\n</div>\n</main>\n") && strpos($page, 'wge-post-head') < strpos($page, '<h1 class="wge-heading">合成の記事</h1>') && strpos($page, '<h1 class="wge-heading">合成の記事</h1>') < strpos($page, 'wge-post-foot'), 'the post comes between its frame, all inside <main>');
+check(str_contains($page, "<nav class=\"wge-post-pager\" aria-label=\"前後の記事\">\n      <a class=\"wge-post-pager-link wge-post-older\" href=\"../20261101-c3d4/\" rel=\"prev\">") && str_contains($page, "    <a class=\"wge-post-back\" href=\"../\">‹ 記事の一覧へ</a>\n  </div>\n</div>\n</main>\n") && strpos($page, 'wge-post-head') < strpos($page, '<h1 class="wge-heading">合成の記事</h1>') && strpos($page, '<h1 class="wge-heading">合成の記事</h1>') < strpos($page, 'wge-post-foot'), 'the post comes between its frame, all inside <main>');
 $framed = (new Blog('合成', $format, $renderer))->framePost("<body>\n<main class=\"wge-page\">\n<pre></main>\n<main class=\"wge-page\">\n</pre>\n</main>\n</body>\n", '2026-11-23');
 check(preg_match('#^<body>\n<main class="wge-page">\n<div class="wge-post-head">.*</div>\n</div>\n<pre></main>\n<main class="wge-page">\n</pre>\n<div class="wge-post-foot">.*</div>\n</main>\n</body>\n$#sD', $framed) === 1, "the frame goes after the first <main> and before the last </main>, whatever the post's text holds");
 check((new Blog('合成', $format, $renderer))->framePost("<p>no main</p>\n", '2026-11-23') === "<p>no main</p>\n", 'a page without <main> is left as it is');
@@ -904,6 +904,59 @@ gc_collect_cycles();
 @unlink($sbFile);
 removeTree($sbDir);
 
+
+// ------------------------------------------------------- part 9: the posts on either side (blog.md §10)
+
+$pgDir = sys_get_temp_dir() . '/wge-test-pager-' . bin2hex(random_bytes(4));
+$pg = new Api(PageStore::openDatabase('sqlite::memory:'), $pgDir, $format, $renderer, siteUrl: 'https://fest.example/blog/', blog: new Blog('合成のお知らせ', $format, $renderer, 'https://fest.example/blog/'));
+$pgPost = static fn (string $path, array $body) => $pg->handle('POST', $path, json_encode($body), $json);
+$pgRead = static fn (string $id): string => (string) @file_get_contents($pgDir . '/' . $id . '/index.html');
+$pgBody = static fn (string $title): string => "<Section padding=\"lg\" width=\"narrow\">\n  <Heading level=\"1\">{$title}</Heading>\n</Section>\n";
+$pgPager = static function (string $html): string {
+    $at = strpos($html, '<nav class="wge-post-pager"');
+    return $at === false ? '' : substr($html, $at, strpos($html, '</nav>', $at) - $at);
+};
+foreach ([['20261101-aaaa', '合成の一', '2026-11-01'], ['20261110-bbbb', '合成の二 <b>&"', '2026-11-10'], ['20261120-cccc', '合成の三', '2026-11-20']] as [$id, $title, $date]) {
+    $pgPost("/api/pages/{$id}/load", ['initialSource' => $pgBody('合成'), 'meta' => ['title' => $title, 'date' => $date]]);
+}
+$pgPost('/api/pages/20261101-aaaa/publish', ['revision' => 0]);
+check($pgPager($pgRead('20261101-aaaa')) === '' && str_contains($pgRead('20261101-aaaa'), "<div class=\"wge-post-foot\">\n  <div><a class=\"wge-post-back\" href=\"../\">‹ 記事の一覧へ</a></div>\n</div>\n"), 'a post alone has no posts on either side, and its foot is as before');
+$pgPost('/api/pages/20261120-cccc/publish', ['revision' => 0]);
+check(str_contains($pgPager($pgRead('20261101-aaaa')), '<a class="wge-post-pager-link wge-post-newer" href="../20261120-cccc/" rel="next"><span class="wge-post-pager-label">次の記事 ›</span><span class="wge-post-pager-title">合成の三</span></a>'), 'publishing a newer post links the older one to it');
+check(str_contains($pgPager($pgRead('20261120-cccc')), 'href="../20261101-aaaa/" rel="prev"') && !str_contains($pgRead('20261120-cccc'), 'wge-post-newer'), 'the newest post links only to the one before it');
+check(!str_contains($pgRead('20261101-aaaa'), '20261110-bbbb') && !is_file($pgDir . '/20261110-bbbb/index.html'), 'a draft is never linked, nor written');
+$pgPost('/api/pages/20261110-bbbb/publish', ['revision' => 0]);
+$middle = $pgPager($pgRead('20261110-bbbb'));
+check(str_contains($middle, 'href="../20261101-aaaa/" rel="prev"') && str_contains($middle, 'href="../20261120-cccc/" rel="next"') && strpos($middle, 'wge-post-older') < strpos($middle, 'wge-post-newer'), 'a post in the middle links to both, the older first');
+check(str_contains($pgPager($pgRead('20261101-aaaa')), 'href="../20261110-bbbb/"') && str_contains($pgPager($pgRead('20261120-cccc')), 'href="../20261110-bbbb/"') && !str_contains($pgPager($pgRead('20261101-aaaa')), '20261120-cccc'), 'publishing it between two moves their links to it');
+check(str_contains($pgPager($pgRead('20261101-aaaa')), '<span class="wge-post-pager-title">合成の二 &lt;b&gt;&amp;&quot;</span>') && !str_contains($pgRead('20261101-aaaa'), '<b>&'), "a neighbour's title is escaped");
+$pgPost('/api/pages/20261120-cccc/meta', ['title' => '合成の三・改', 'date' => '2026-11-20']);
+check(str_contains($pgPager($pgRead('20261110-bbbb')), '合成の三・改'), "a new title shows in the posts next to it");
+$pgPost('/api/pages/20261101-aaaa/meta', ['title' => '合成の一', 'date' => '2026-11-30']);
+check(str_contains($pgPager($pgRead('20261120-cccc')), 'href="../20261101-aaaa/" rel="next"') && str_contains($pgPager($pgRead('20261110-bbbb')), 'href="../20261120-cccc/" rel="next"') && !str_contains($pgRead('20261110-bbbb'), 'href="../20261101-aaaa/"'), 'a new date moves a post among the others');
+[, $pgVersions] = $pg->handle('GET', '/api/pages/20261120-cccc/versions', '', []);
+$pgPost('/api/pages/20261120-cccc/undo-publish', ['versionId' => array_values(array_filter($pgVersions['versions'], static fn (array $v) => $v['live']))[0]['id']]);
+check(!is_file($pgDir . '/20261120-cccc/index.html') && str_contains($pgPager($pgRead('20261110-bbbb')), 'href="../20261101-aaaa/" rel="next"') && !str_contains($pgRead('20261110-bbbb'), '20261120-cccc'), 'taking a post back joins the posts on either side of it');
+$pg->rebuildSite();
+check(str_contains($pgPager($pgRead('20261101-aaaa')), 'href="../20261110-bbbb/" rel="prev"'), 'writing the blog again keeps the links');
+$pg = null;
+removeTree($pgDir);
+
+// In a site with a blog, the posts are under blog/ and link to each other the same way.
+$psDir = sys_get_temp_dir() . '/wge-test-pager-site-' . bin2hex(random_bytes(4));
+mkdir($psDir);
+$ps = new Api(PageStore::openDatabase('sqlite::memory:'), $psDir, $format, $renderer, siteUrl: 'https://fest.example/', blog: new Blog('合成のブログ', $format, $renderer, 'https://fest.example/blog/'), site: new Site('合成の祭', $schema));
+$psPost = static fn (string $path, array $body) => $ps->handle('POST', $path, json_encode($body), $json);
+$psPost('/api/pages/top/load', ['initialSource' => "<Text>合成</Text>\n", 'meta' => ['title' => '合成の祭', 'path' => 'index.html']]);
+$psPost('/api/pages/top/publish', ['revision' => 0]);
+foreach ([['20261101-aaaa', '合成の一', '2026-11-01'], ['20261110-bbbb', '合成の二', '2026-11-10']] as [$id, $title, $date]) {
+    $psPost("/api/pages/{$id}/load", ['initialSource' => $pgBody('合成'), 'meta' => ['title' => $title, 'date' => $date]]);
+    $psPost("/api/pages/{$id}/publish", ['revision' => 0]);
+}
+$older = (string) @file_get_contents($psDir . '/blog/20261101-aaaa/index.html');
+check(str_contains($older, 'href="../20261110-bbbb/" rel="next"') && !str_contains((string) @file_get_contents($psDir . '/index.html'), 'wge-post-pager'), "a site's blog's posts link to each other, and the site's own pages have no such links");
+$ps = null;
+removeTree($psDir);
 
 foreach ($failures as $f) {
     echo "FAIL {$f}\n";

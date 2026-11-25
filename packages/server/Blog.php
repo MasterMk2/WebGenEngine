@@ -92,12 +92,23 @@ final class Blog
     }
 
     // A published post with its frame: the way back to the contents and the date above the
-    // post's own text, and a link back to the contents after it.
-    public function framePost(string $page, string $date): string
+    // post's own text, and a link back to the contents after it. $newer and $older are the
+    // published posts on either side ({id, title}, blog.md §10); with neither, the frame is as before.
+    public function framePost(string $page, string $date, ?array $newer = null, ?array $older = null): string
     {
         $head = "<div class=\"wge-post-head\">\n  <div>\n    <p class=\"wge-post-crumb\"><a href=\"../\">‹ " . self::h($this->title) . "</a></p>\n    "
             . self::time('wge-post-date', $date) . "\n  </div>\n</div>\n";
-        $foot = "<div class=\"wge-post-foot\">\n  <div><a class=\"wge-post-back\" href=\"../\">‹ 記事の一覧へ</a></div>\n</div>\n";
+        if ($newer === null && $older === null) {
+            $foot = "<div class=\"wge-post-foot\">\n  <div><a class=\"wge-post-back\" href=\"../\">‹ 記事の一覧へ</a></div>\n</div>\n";
+            return self::insertIntoMain($page, $head, $foot);
+        }
+        // Older first (on the left), as one reads back in time; each link names the post it opens.
+        $link = static fn (array $post, string $class, string $rel, string $label): string => '      <a class="wge-post-pager-link ' . $class . '" href="../' . self::h($post['id']) . '/" rel="' . $rel . '">'
+            . '<span class="wge-post-pager-label">' . $label . '</span><span class="wge-post-pager-title">' . self::h($post['title']) . "</span></a>\n";
+        $foot = "<div class=\"wge-post-foot\">\n  <div>\n    <nav class=\"wge-post-pager\" aria-label=\"前後の記事\">\n"
+            . ($older !== null ? $link($older, 'wge-post-older', 'prev', '‹ 前の記事') : '')
+            . ($newer !== null ? $link($newer, 'wge-post-newer', 'next', '次の記事 ›') : '')
+            . "    </nav>\n    <a class=\"wge-post-back\" href=\"../\">‹ 記事の一覧へ</a>\n  </div>\n</div>\n";
         return self::insertIntoMain($page, $head, $foot);
     }
 
