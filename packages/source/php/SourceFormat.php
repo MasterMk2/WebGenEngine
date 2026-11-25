@@ -93,6 +93,12 @@ final class SourceFormat
         $this->embedSources = $schema['embedSources'] ?? [];
     }
 
+    /** The schema this format was made from (its components and their attributes). */
+    public function schema(): array
+    {
+        return $this->schema;
+    }
+
     // Where a block may stand (source-format.md §4.1): a container may list the children it takes
     // ("children"), and a component the parents it goes in ("parents"). The page is "document".
     private function placementOk(string $parentType, array $comp): bool

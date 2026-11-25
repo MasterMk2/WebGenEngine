@@ -31,6 +31,8 @@ final class Api
     /** A site's map for search engines, at the site's root (site.md §4.1). */
     private const SITEMAP = 'sitemap.xml';
     private const TITLES = ['top' => 'トップページ'];
+    /** Rewrites a blog's parts' pictures for its contents page (relink), made when first needed. */
+    private ?Site $blogLinks = null;
 
     public function __construct(
         private readonly PDO $db,
@@ -47,6 +49,24 @@ final class Api
         /** With a site, each page is written where its path says, and only files WGE wrote are touched (site.md) */
         private readonly ?Site $site = null,
     ) {
+    }
+
+    /** The header and footer (site.md §5): a site's, and since 2026-11-25 a blog's too (blog.md §8). */
+    private function hasParts(): bool
+    {
+        return $this->site !== null || $this->blog !== null;
+    }
+
+    // A blog's parts are written in pages one folder down (its posts) and in its contents page;
+    // only their pictures are rewritten for the contents page (Site::relink, blog.md §8).
+    private function relink(Node $doc, int $depth): void
+    {
+        if ($this->site !== null) {
+            $this->site->relink($doc, $depth);
+            return;
+        }
+        $this->blogLinks ??= new Site($this->blog->title(), $this->format->schema());
+        $this->blogLinks->relink($doc, $depth, false);
     }
 
     /**
@@ -77,11 +97,11 @@ final class Api
         }
         if ($method === 'GET' && $path === '/api/ping') {
             return self::reply(200, ['ok' => true] + ($this->siteUrl !== null ? ['siteUrl' => $this->siteUrl] : []) + ($this->blog !== null ? ['blog' => true, 'blogTitle' => $this->blog->title()] : [])
-                + ($this->site !== null ? ['site' => true, 'siteName' => $this->site->name()] : []));
+                + ($this->site !== null ? ['site' => true, 'siteName' => $this->site->name()] : []) + ($this->hasParts() ? ['parts' => true] : []));
         }
         if ($method === 'GET' && $path === '/api/pages') {
-            // A site's header and footer are listed apart from its pages (site.md §5).
-            return self::reply(200, ['ok' => true, 'pages' => $this->listPages(false)] + ($this->site !== null ? ['parts' => $this->listParts()] : []));
+            // The header and footer are listed apart from the pages (site.md §5, blog.md §8).
+            return self::reply(200, ['ok' => true, 'pages' => $this->listPages(false)] + ($this->hasParts() ? ['parts' => $this->listParts()] : []));
         }
         if ($method === 'GET' && $path === '/api/deleted-pages') {
             return self::reply(200, ['ok' => true, 'pages' => $this->listDeleted()]);
@@ -101,9 +121,9 @@ final class Api
         if ($this->blog !== null && $pageId === 'top') {
             return self::reply(404, ['ok' => false, 'reason' => 'not-found']);
         }
-        // A site's own parts are its header and footer only.
-        $isPart = $this->site !== null && Site::isPart($pageId);
-        if ($this->site !== null && !$isPart && str_starts_with($pageId, Site::PART_PREFIX)) {
+        // A site's or a blog's own parts are its header and footer only.
+        $isPart = $this->hasParts() && Site::isPart($pageId);
+        if ($this->hasParts() && !$isPart && str_starts_with($pageId, Site::PART_PREFIX)) {
             return self::reply(404, ['ok' => false, 'reason' => 'not-found']);
         }
         $versionId = isset($m[3]) ? (int) $m[3] : null;
@@ -434,7 +454,7 @@ final class Api
             WHERE p.id NOT IN (SELECT id FROM deleted_pages)')->fetchAll(PDO::FETCH_ASSOC);
         $pages = [];
         foreach ($rows as $r) {
-            if (($this->blog !== null && $r['id'] === 'top') || ($publishedOnly && $r['published'] === null) || ($this->site !== null && Site::isPart((string) $r['id']))) {
+            if (($this->blog !== null && $r['id'] === 'top') || ($publishedOnly && $r['published'] === null) || ($this->hasParts() && Site::isPart((string) $r['id']))) {
                 continue;
             }
             $page = [
@@ -562,6 +582,12 @@ final class Api
             $this->writeSitemap();
             return;
         }
+        // A blog's header or footer is in every post and in the contents page (blog.md §8), which
+        // the caller writes after this; it has no file of its own.
+        if ($this->blog !== null && Site::isPart($pageId)) {
+            $this->writeBlogPosts();
+            return;
+        }
         $file = $this->siteDir . '/' . ($pageId === 'top' ? 'index.html' : "{$pageId}/index.html");
         if ($source === null) {
             if (is_file($file)) {
@@ -577,7 +603,9 @@ final class Api
         $title = $meta['title'] ?? (self::TITLES[$pageId] ?? $pageId);
         try {
             $doc = $this->format->parse($source);
-            $html = $this->renderer->renderPage($doc, $title, 'ja', $pageId === 'top' ? 'style.css' : '../style.css', false, $this->pageHead($pageId, $doc, $meta['description'] ?? ''));
+            // Only a blog has parts here: its posts are one folder down (only the published versions go in).
+            $depth = $pageId === 'top' ? 0 : 1;
+            $html = $this->renderer->renderPage($doc, $title, 'ja', $pageId === 'top' ? 'style.css' : '../style.css', false, $this->pageHead($pageId, $doc, $meta['description'] ?? ''), $this->blog !== null ? $this->partOf(Site::HEADER, $depth) : null, $this->blog !== null ? $this->partOf(Site::FOOTER, $depth) : null);
             // A post carries its date and the way back to the contents (blog.md §7).
             if ($this->blog !== null && $pageId !== 'top' && is_string($meta['date'] ?? null)) {
                 $html = $this->blog->framePost($html, $meta['date']);
@@ -627,8 +655,16 @@ final class Api
             return null;
         }
         $doc = $this->format->parse($source);
-        $this->site->relink($doc, $depth);
+        $this->relink($doc, $depth);
         return $doc;
+    }
+
+    // Every published post again, after the blog's header or footer is published or taken back.
+    private function writeBlogPosts(): void
+    {
+        foreach (array_column($this->listPages(true), 'id') as $id) {
+            $this->writeSite($id, (new PageStore($this->db, $id, $this->now))->publishedSource());
+        }
     }
 
     // After the header or footer is published or taken back: every page written, again where it is.
@@ -845,7 +881,7 @@ final class Api
             $this->listPages(true),
         );
         try {
-            $files = $this->blog->files($posts);
+            $files = $this->blog->files($posts, $this->partOf(Site::HEADER, 0), $this->partOf(Site::FOOTER, 0));
         } catch (SourceError | RenderError $e) {
             error_log('wge: cannot render the blog contents: ' . $e->getMessage());
             return;

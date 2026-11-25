@@ -111,4 +111,7 @@ test("the header's and footer's first sources read back as pages", () => {
     assert.ok(source.includes('合成の祭 &lt;&amp;&gt;'));
   }
   assert.ok(partTemplate(HEADER, 'x').includes('<Link href="/">x</Link>'));
+  // A blog's header links to where the blog is seen, or to nothing (blog.md §8).
+  assert.ok(partTemplate(HEADER, 'x', 'https://fest.example/blog/').includes('<Link href="https://fest.example/blog/">x</Link>'));
+  assert.ok(partTemplate(HEADER, 'x', null).includes('<Text size="lg">x</Text>'));
 });
