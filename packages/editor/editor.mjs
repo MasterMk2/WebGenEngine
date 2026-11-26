@@ -36,7 +36,7 @@ const ATTRS = {
   'aria-label': 'メニューの名前（読み上げ用）', 'aria-current': '今いる所の印',
 };
 // Where one name means something else on a component (a picture's own size, not a layout width).
-const ATTRS_OF = { Image: { width: '元の幅（px）', height: '元の高さ（px）' }, Embed: { src: '埋め込む場所', title: '中身の説明（読み上げ用）' } };
+const ATTRS_OF = { Image: { width: '元の幅（px）', height: '元の高さ（px）', href: '押すと開く所（空なら開かない）' }, Embed: { src: '埋め込む場所', title: '中身の説明（読み上げ用）' } };
 const VALUES = {
   vertical: '縦', horizontal: '横', start: '先頭側', center: '中央', end: '末尾側', stretch: '伸ばす', between: '両端',
   true: 'する', false: 'しない', none: 'なし', subtle: '薄い色', primary: '主な色', inverse: '反転', secondary: '控えめ',

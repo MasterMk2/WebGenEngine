@@ -79,9 +79,10 @@
         { "name": "alt", "type": "string", "required": true },
         { "name": "ratio", "type": "enum", "values": ["auto", "1:1", "4:3", "16:9"] },
         { "name": "width", "type": "int", "min": 1, "max": 20000 },
-        { "name": "height", "type": "int", "min": 1, "max": 20000 }
+        { "name": "height", "type": "int", "min": 1, "max": 20000 },
+        { "name": "href", "type": "url" }
       ],
-      "render": { "tag": "img", "class": "wge-image", "classes": ["ratio"], "attrs": ["src", "alt", "width", "height"], "fixed": [["loading", "lazy"], ["decoding", "async"]] }
+      "render": { "tag": "img", "class": "wge-image", "classes": ["ratio"], "attrs": ["src", "alt", "width", "height"], "fixed": [["loading", "lazy"], ["decoding", "async"]], "link": { "attr": "href", "class": "wge-image-link" } }
     },
     {
       "name": "Embed",

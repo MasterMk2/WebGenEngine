@@ -99,6 +99,7 @@ function producibleClasses() {
   for (const comp of schema.components) {
     if (!comp.render) continue;
     if (comp.render.class) list.push(comp.render.class);
+    if (comp.render.link) list.push(comp.render.link.class);
     for (const entry of comp.render.classes ?? []) {
       const [name, prefix = name] = entry.split(':');
       const attr = comp.attributes.find((a) => a.name === name);

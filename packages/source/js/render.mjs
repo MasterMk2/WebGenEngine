@@ -154,8 +154,14 @@ export function createRenderer(schema, theme, baseCss) {
       return `<div${at} class="${['wge-edit-raw', ...classesOf(comp, node.props)].join(' ')}">${escapeText(node.props.title ?? comp.name)}</div>`;
     }
     const [tag, open] = openTag(comp, node, path);
-    // An element that HTML does not leave open (iframe) still gets its end tag.
-    if (comp.kind === 'void' || comp.kind === 'inline-void') return comp.render.close ? `${open}</${tag}>` : open;
+    // An element that HTML does not leave open (iframe) still gets its end tag. A block that may
+    // link (a picture with a link, rendering.md §7.7) is wrapped in <a> when it has one.
+    if (comp.kind === 'void' || comp.kind === 'inline-void') {
+      const out = comp.render.close ? `${open}</${tag}>` : open;
+      const link = comp.render.link;
+      if (link && Object.prototype.hasOwnProperty.call(node.props, link.attr)) return `<a class="${link.class}" href="${escapeAttr(node.props[link.attr])}">${out}</a>`;
+      return out;
+    }
     if (comp.kind === 'container') {
       // `inner` wraps the children in one more element (a table's rows in <tbody>, which browsers
       // add anyway), so the page's elements are the ones written.

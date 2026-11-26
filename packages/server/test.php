@@ -975,6 +975,24 @@ check(str_contains($older, 'href="../20261110-bbbb/" rel="next"') && !str_contai
 $ps = null;
 removeTree($psDir);
 
+// ------------------------------------------------------- part 10: a picture with a link (rendering.md §7.7)
+
+// In a site, a logo that links to the top is found from every depth, the blog's posts too.
+$ilDir = sys_get_temp_dir() . '/wge-test-imagelink-' . bin2hex(random_bytes(4));
+mkdir($ilDir);
+$il = new Api(PageStore::openDatabase('sqlite::memory:'), $ilDir, $format, $renderer, siteUrl: 'https://fest.example/', blog: new Blog('合成のブログ', $format, $renderer, 'https://fest.example/blog/'), site: new Site('合成の祭', $schema));
+$ilPost = static fn (string $path, array $body) => $il->handle('POST', $path, json_encode($body), $json);
+$ilPost('/api/pages/part-header/load', ['initialSource' => "<Section>\n  <Image src=\"../media/0123456789abcdef.png\" alt=\"合成の祭\" width=\"78\" height=\"32\" href=\"/\" />\n</Section>\n"]);
+$ilPost('/api/pages/part-header/publish', ['revision' => 0]);
+$ilPost('/api/pages/top/load', ['initialSource' => "<Text>合成</Text>\n", 'meta' => ['title' => '合成の祭', 'path' => 'index.html']]);
+$ilPost('/api/pages/top/publish', ['revision' => 0]);
+$ilPost('/api/pages/20261101-aaaa/load', ['initialSource' => "<Text>合成</Text>\n", 'meta' => ['title' => '合成の一', 'date' => '2026-11-01']]);
+$ilPost('/api/pages/20261101-aaaa/publish', ['revision' => 0]);
+check(str_contains((string) @file_get_contents($ilDir . '/index.html'), '<a class="wge-image-link" href="./"><img class="wge-image" src="media/0123456789abcdef.png"'), "a site's logo links to its top from the top page");
+check(str_contains((string) @file_get_contents($ilDir . '/blog/20261101-aaaa/index.html'), '<a class="wge-image-link" href="../../"><img class="wge-image" src="../../media/0123456789abcdef.png"'), "and from a post of its blog, two folders down");
+$il = null;
+removeTree($ilDir);
+
 foreach ($failures as $f) {
     echo "FAIL {$f}\n";
 }

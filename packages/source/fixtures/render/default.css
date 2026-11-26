@@ -104,6 +104,15 @@ small { font-size: var(--wge-font-size-sm); }
 .wge-ratio-1-1 { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; }
 .wge-ratio-4-3 { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
 .wge-ratio-16-9 { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
+/* A picture with a link (rendering.md §7.7): only the picture opens it, not the room beside it,
+   except a picture drawn at the column's width. */
+.wge-image-link { display: block; width: fit-content; max-width: 100%; }
+.wge-image-link:has(> :is(.wge-ratio-1-1, .wge-ratio-4-3, .wge-ratio-16-9)) { width: auto; }
+/* On a coloured section the ring that shows the keyboard's place is drawn in the section's text
+   colour, and on a card or notice there in the main colour again. */
+.wge-bg-primary :focus-visible { outline-color: var(--wge-color-on-primary); }
+.wge-bg-inverse :focus-visible { outline-color: var(--wge-color-on-inverse); }
+:is(.wge-surface-card, .wge-surface-notice) :focus-visible { outline-color: var(--wge-color-primary); }
 
 /* A map or a page of this site, set in the page (rendering.md §7.2): full width, at a set ratio. */
 .wge-embed { display: block; width: 100%; aspect-ratio: 16 / 9; border: 0; border-radius: var(--wge-radius); background: var(--wge-color-subtle); }
@@ -132,7 +141,6 @@ small { font-size: var(--wge-font-size-sm); }
 .wge-bg-inverse .wge-nav-link[aria-current="page"] { background: var(--wge-color-on-inverse); color: var(--wge-color-inverse); }
 :is(.wge-surface-card, .wge-surface-notice) .wge-nav-link { color: var(--wge-color-text); }
 :is(.wge-surface-card, .wge-surface-notice) .wge-nav-link[aria-current="page"] { background: var(--wge-color-primary); color: var(--wge-color-on-primary); }
-.wge-bg-primary .wge-nav-link:focus-visible { outline-color: var(--wge-color-on-primary); }
 @media (max-width: 40rem) {
   .wge-nav { flex-wrap: nowrap; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
 }
